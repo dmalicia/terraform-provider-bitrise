@@ -20,7 +20,7 @@ func main() {
 	flag.Parse()
 
 	opts := providerserver.ServeOpts{
-		Address: "registry.terraform.io/providers/dmalicia/bitrise",
+		Address: "hashicorp.com/dmalicia/bitrise",
 		Debug:   debug,
 	}
 
