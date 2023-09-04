@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/http/httputil"
 	"strings"
@@ -176,7 +176,7 @@ func (r *AppFinishResource) Create(ctx context.Context, req resource.CreateReque
 	defer httpResp.Body.Close()
 
 	// Read the response body
-	responseBody, err := ioutil.ReadAll(httpResp.Body)
+	responseBody, err := io.ReadAll(httpResp.Body)
 	if err != nil {
 		fmt.Println("Error reading response body:", err)
 		handleRequestError(err, resp)

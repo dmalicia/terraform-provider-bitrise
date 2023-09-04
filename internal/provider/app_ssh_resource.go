@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/http/httputil"
 	"os"
@@ -174,7 +174,7 @@ func (r *AppSSHResource) Create(ctx context.Context, req resource.CreateRequest,
 	defer httpResp.Body.Close()
 
 	// Read the response body
-	responseBody, err := ioutil.ReadAll(httpResp.Body)
+	responseBody, err := io.ReadAll(httpResp.Body)
 	if err != nil {
 		fmt.Println("Error reading response body:", err)
 		handleRequestError(err, resp)
