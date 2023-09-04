@@ -360,7 +360,3 @@ func handleRequestError(err error, resp *resource.CreateResponse) {
 func printResponseInfo(httpResp *http.Response) {
 	// Implementation for printing response info
 }
-
-func handleResponseStatus(httpResp *http.Response, resp *resource.CreateResponse) {
-	// Implementation for handling response status
-}
