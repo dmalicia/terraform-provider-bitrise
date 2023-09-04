@@ -136,9 +136,7 @@ func (t *authenticatedTransport) RoundTrip(req *http.Request) (*http.Response, e
 }
 
 func (p *BitriseProvider) DataSources(ctx context.Context) []func() datasource.DataSource {
-	return []func() datasource.DataSource{
-		NewExampleDataSource,
-	}
+	return []func() datasource.DataSource{}
 }
 
 func New(version string) func() provider.Provider {
