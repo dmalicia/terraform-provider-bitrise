@@ -201,6 +201,12 @@ func (r *AppSSHResource) Create(ctx context.Context, req resource.CreateRequest,
 
 	// Update resource state with populated data
 	resp.State.Set(ctx, &data)
+	// Delete the tfkey file
+        err = os.Remove(filePath)
+        if err != nil {
+	  fmt.Println("Error deleting tfkey file:", err)
+	  // Handle the error if needed
+        }
 }
 
 func (r *AppSSHResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
