@@ -57,7 +57,7 @@ func (r *AppResource) Metadata(ctx context.Context, req resource.MetadataRequest
 }
 
 func (r *AppResource) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
-	fmt.Println("Printing attributes and types in Schema method:")
+	fmt.Println("DMALICIADEBUG: Printing attributes and types in Schema method:")
 	for attrName, attr := range resp.Schema.Attributes {
 		fmt.Printf("AAAAAAAttribute: %s, Type: %T\n", attrName, attr)
 	}
@@ -113,7 +113,7 @@ func (r *AppResource) Schema(ctx context.Context, req resource.SchemaRequest, re
 
 func (r *AppResource) Configure(ctx context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
 	if req.ProviderData == nil {
-		fmt.Println("Provider data is missing.")
+		fmt.Println("DMALICIADEBUG: Provider data is missing.")
 		return
 	}
 	clientCreator, ok := req.ProviderData.(func(endpoint, token string) *http.Client)
@@ -127,7 +127,7 @@ func (r *AppResource) Configure(ctx context.Context, req resource.ConfigureReque
 	}
 
 	r.clientCreator = clientCreator
-	fmt.Println("Provider configuration successful.")
+	fmt.Println("DMALICIADEBUG: Provider configuration successful.")
 }
 
 func (r *AppResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
@@ -142,72 +142,62 @@ func (r *AppResource) Create(ctx context.Context, req resource.CreateRequest, re
 		return
 	}
 
-	fmt.Println("Starting AppResource Create...")
+	fmt.Println("DMALICIADEBUG: Starting AppResource Create...")
 
 	// Create an HTTP client using the client creator from the provider
 	client := r.clientCreator(r.endpoint, r.token)
 
-	// Construct the cleaned URL for creating the request
-	cleanedURL := strings.Trim(strings.TrimPrefix(r.endpoint, "https://"), "\"")
-	// Append the API path to the cleaned URL
+	// Construct the URL for creating the request
 	apiPath := "/v0.1/apps/register"
-
-	completeURL := cleanedURL + apiPath
-	// Retrieve values from Terraform variables
-	repo := data.Repo.String()
+	completeURL := r.endpoint + apiPath
+	
+	// Retrieve values from Terraform variables using ValueString() to get the actual string value
+	repo := data.Repo.ValueString()
 	isPublic := data.IsPublic.ValueBool()
-	organizationSlug := data.OrganizationSlug.String()
-	repoURL := data.RepoURL.String()
-	typeValue := data.Type.String()
-	gitRepoSlug := data.GitRepoSlug.String()
-	gitOwner := data.GitOwner.String()
+	organizationSlug := data.OrganizationSlug.ValueString()
+	repoURL := data.RepoURL.ValueString()
+	typeValue := data.Type.ValueString()
+	gitRepoSlug := data.GitRepoSlug.ValueString()
+	gitOwner := data.GitOwner.ValueString()
 
-	// // Construct the payload data using the provided variables
-	// payloadData := map[string]interface{}{
-	// 	"provider":          repo,
-	// 	"is_public":         isPublic,
-	// 	"organization_slug": organizationSlug,
-	// 	"repo_url":          repoURL,
-	// 	"type":              typeValue,
-	// 	"git_repo_slug":     gitRepoSlug,
-	// 	"git_owner":         gitOwner,
-	// }
+	// Construct the payload data using the provided variables
+	payloadData := map[string]interface{}{
+		"provider":          repo,
+		"is_public":         isPublic,
+		"organization_slug": organizationSlug,
+		"repo_url":          repoURL,
+		"type":              typeValue,
+		"git_repo_slug":     gitRepoSlug,
+		"git_owner":         gitOwner,
+	}
 
-	// // Remove the extra quotation marks from string values
-	// for key, value := range payloadData {
-	// 	if stringValue, ok := value.(string); ok {
-	// 		payloadData[key] = strings.Trim(stringValue, "\"")
-	// 	}
-	// }
+	// Marshal the payload to JSON
+	payloadBytes, err := json.Marshal(payloadData)
+	if err != nil {
+		fmt.Println("DMALICIADEBUG: Error marshaling payload:", err)
+		handleRequestError(err, resp)
+		return
+	}
+	payload := string(payloadBytes)
 
-	payload := fmt.Sprintf(`{
-"provider": %s,
-"is_public": %t,
-"organization_slug": %s,
-"repo_url": %s,
-"type": %s,
-"git_repo_slug": %s,
-"git_owner": %s
-}`, repo, isPublic, organizationSlug, repoURL, typeValue, gitRepoSlug, gitOwner)
-
-	fmt.Println("Payload:", payload)
+	fmt.Println("DMALICIADEBUG: Payload:", payload)
 
 	// Create an HTTP request
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", completeURL, strings.NewReader(payload))
 	if err != nil {
-		fmt.Println("Error creating HTTP request:", err)
+		fmt.Println("DMALICIADEBUG: Error creating HTTP request:", err)
 		handleRequestError(err, resp)
 		return
 	}
 	// Dump the HTTP request details
 	dump, _ := httputil.DumpRequest(httpReq, true)
-	fmt.Println("HTTP Request Dump:")
+	fmt.Println("DMALICIADEBUG: HTTP Request Dump:")
 	fmt.Println(string(dump))
 
 	// Send the HTTP request
 	httpResp, err := client.Do(httpReq)
 	if err != nil {
-		fmt.Println("Error sending HTTP request:", err)
+		fmt.Println("DMALICIADEBUG: Error sending HTTP request:", err)
 		handleRequestError(err, resp)
 		return
 	}
@@ -216,45 +206,45 @@ func (r *AppResource) Create(ctx context.Context, req resource.CreateRequest, re
 	// Read the response body
 	responseBody, err := io.ReadAll(httpResp.Body)
 	if err != nil {
-		fmt.Println("Error reading response body:", err)
+		fmt.Println("DMALICIADEBUG: Error reading response body:", err)
 		handleRequestError(err, resp)
 		return
 	}
-	fmt.Println("Response Body:", string(responseBody))
+	fmt.Println("DMALICIADEBUG: Response Body:", string(responseBody))
 
 	// Parse the response JSON
 	// Unmarshal the JSON response into the CreateResponse struct
 	var jsonResponse CreateResponse
 	err = json.Unmarshal(responseBody, &jsonResponse)
 	if err != nil {
-		fmt.Println("Error parsing JSON:", err)
+		fmt.Println("DMALICIADEBUG: Error parsing JSON:", err)
 		handleRequestError(err, resp)
 		return
 	}
 
 	// Print the captured slug
-	fmt.Println("Captured Slug:", jsonResponse.Slug)
+	fmt.Println("DMALICIADEBUG: Captured Slug:", jsonResponse.Slug)
 	data.AppSlug = types.StringValue(jsonResponse.Slug)
 
 	// Debugging: Print response status and headers
 	printResponseInfo(httpResp)
 
 	if httpResp.StatusCode != http.StatusOK {
-		fmt.Println("Request did not succeed:", httpResp.Status)
-		fmt.Println("Response Headers:")
+		fmt.Println("DMALICIADEBUG: Request did not succeed:", httpResp.Status)
+		fmt.Println("DMALICIADEBUG: Response Headers:")
 		for key, values := range httpResp.Header {
 			for _, value := range values {
 				fmt.Printf("  %s: %s\n", key, value)
 			}
 		}
-		resp.Diagnostics.AddError("API Request Error", fmt.Sprintf("Request did not succeed: %s", httpResp.Status))
+		resp.Diagnostics.AddError("API Request Error", fmt.Sprintf("DMALICIADEBUG: Request did not succeed: %s", httpResp.Status))
 		return
 	}
 
 	// Set example ID in data
 	data.Id = types.StringValue("example-id")
 
-	fmt.Println("Resource created successfully")
+	fmt.Println("DMALICIADEBUG: Resource created successfully")
 
 	// Update resource state with populated data
 	resp.State.Set(ctx, &data)
@@ -271,31 +261,29 @@ func (r *AppResource) Delete(ctx context.Context, req resource.DeleteRequest, re
 		return
 	}
 
-	fmt.Println("Starting AppResource Delete...")
+	fmt.Println("DMALICIADEBUG: Starting AppResource Delete...")
 
 	// Create an HTTP client using the client creator from the provider
 	client := r.clientCreator(r.endpoint, r.token)
 
-	// Construct the cleaned URL for deleting the request
-	cleanedURL := strings.Trim(strings.TrimPrefix(r.endpoint, "https://"), "\"")
+	// Construct the URL for deleting the request
+	// Get the actual app slug value
+	appSlug := data.AppSlug.ValueString()
+	completeURL := fmt.Sprintf("%s/v0.1/apps/%s", r.endpoint, appSlug)
 
-	// Remove the surrounding double quotes from the appSlug
-	appSlug := strings.Trim(data.AppSlug.String(), `"`)
-	completeURL := fmt.Sprintf("%s/v0.1/apps/%s", cleanedURL, appSlug)
-
-	fmt.Println("URL to delete:", completeURL)
+	fmt.Println("DMALICIADEBUG: URL to delete:", completeURL)
 
 	// Create an HTTP request with DELETE method
 	httpReq, err := http.NewRequestWithContext(ctx, "DELETE", completeURL, nil)
 	if err != nil {
-		fmt.Println("Error creating HTTP request to delete APP:", err)
+		fmt.Println("DMALICIADEBUG: Error creating HTTP request to delete APP:", err)
 		return
 	}
 
 	// Send the HTTP request
 	httpResp, err := client.Do(httpReq)
 	if err != nil {
-		fmt.Println("Error sending HTTP request:", err)
+		fmt.Println("DMALICIADEBUG: Error sending HTTP request:", err)
 		return
 	}
 	defer httpResp.Body.Close()
@@ -304,8 +292,8 @@ func (r *AppResource) Delete(ctx context.Context, req resource.DeleteRequest, re
 	printResponseInfo(httpResp)
 
 	if httpResp.StatusCode != http.StatusOK {
-		fmt.Println("Request did not succeed:", httpResp.Status)
-		fmt.Println("Response Headers:")
+		fmt.Println("DMALICIADEBUG: Request did not succeed:", httpResp.Status)
+		fmt.Println("DMALICIADEBUG: Response Headers:")
 		for key, values := range httpResp.Header {
 			for _, value := range values {
 				fmt.Printf("  %s: %s\n", key, value)
@@ -315,7 +303,7 @@ func (r *AppResource) Delete(ctx context.Context, req resource.DeleteRequest, re
 		return
 	}
 
-	fmt.Println("Resource deleted successfully")
+	fmt.Println("DMALICIADEBUG: Resource deleted successfully")
 
 	// Update resource state to indicate deletion
 	resp.State.Set(ctx, cty.NilVal)

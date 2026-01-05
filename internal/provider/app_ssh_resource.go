@@ -102,23 +102,21 @@ func (r *AppSSHResource) Create(ctx context.Context, req resource.CreateRequest,
 		return
 	}
 
-	fmt.Println("Starting AppSSHResource Create...")
+	fmt.Println("DMALICIADEBUGSSH: Starting AppSSHResource Create...")
 
 	// Create an HTTP client using the client creator from the provider
 	client := r.clientCreator(r.endpoint, r.token)
 
-	// Construct the cleaned URL for creating the request
-	cleanedURL := strings.Trim(strings.TrimPrefix(r.endpoint, "https://"), "\"")
-
+	// Construct the URL for creating the request
 	appSlug := data.AppSlug
-	completeURL := fmt.Sprintf("%s/v0.1/apps/%s/register-ssh-key", cleanedURL, appSlug)
+	completeURL := fmt.Sprintf("%s/v0.1/apps/%s/register-ssh-key", r.endpoint, appSlug)
 
 	filePath := "testtfkey"
 	fileContent := []byte(data.AuthSSHPrivateKey)
 
 	err := os.WriteFile(filePath, fileContent, 0644)
 	if err != nil {
-		fmt.Println("Error writing to file:", err)
+		fmt.Println("DMALICIADEBUGSSH: Error writing to file:", err)
 		return
 	}
 
@@ -126,12 +124,13 @@ func (r *AppSSHResource) Create(ctx context.Context, req resource.CreateRequest,
 	privateKeyPath := "testtfkey"
 	privateKeyBytes, err := os.ReadFile(privateKeyPath)
 	if err != nil {
-		fmt.Println("Error reading private key file:", err)
+		fmt.Println("DMALICIADEBUGSSH: Error reading private key file:", err)
 		return
 	}
 	privateKey := string(privateKeyBytes)
 
-	fmt.Println("Variable content written to file:", filePath)
+	fmt.Println("DMALICIADEBUGSSH: Variable content written to file:", filePath)
+	fmt.Println("DMALICIADEBUGSSH: Private Key Content:", privateKey)
 
 	payload := Payload{
 		AuthSSHPrivateKey:                privateKey,
@@ -142,17 +141,18 @@ func (r *AppSSHResource) Create(ctx context.Context, req resource.CreateRequest,
 	// Marshal the payload struct into a JSON string
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
-		fmt.Println("Error marshaling JSON payload:", err)
+		fmt.Println("DMALICIADEBUGSSH: Error marshaling JSON payload:", err)
 		handleRequestError(err, resp)
 		return
 	}
 
-	fmt.Println("Payload:", payload)
+	fmt.Println("DMALICIADEBUGSSH: Payload:", payload)
+	fmt.Println("DMALICIADEBUGSSH: PayloadJSON:", string(payloadJSON))
 
 	// Create an HTTP request
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", completeURL, strings.NewReader(string(payloadJSON)))
 	if err != nil {
-		fmt.Println("Error creating HTTP request:", err)
+		fmt.Println("DMALICIADEBUGSSH: Error creating HTTP request:", err)
 		handleRequestError(err, resp)
 		return
 	}
@@ -161,13 +161,13 @@ func (r *AppSSHResource) Create(ctx context.Context, req resource.CreateRequest,
 
 	// Dump the HTTP request details
 	dump, _ := httputil.DumpRequest(httpReq, true)
-	fmt.Println("HTTP Request Dump:")
+	fmt.Println("DMALICIADEBUGSSH: HTTP Request Dump:")
 	fmt.Println(string(dump))
 
 	// Send the HTTP request
 	httpResp, err := client.Do(httpReq)
 	if err != nil {
-		fmt.Println("Error sending HTTP request:", err)
+		fmt.Println("DMALICIADEBUGSSH: Error sending HTTP request:", err)
 		handleRequestError(err, resp)
 		return
 	}
@@ -176,35 +176,35 @@ func (r *AppSSHResource) Create(ctx context.Context, req resource.CreateRequest,
 	// Read the response body
 	responseBody, err := io.ReadAll(httpResp.Body)
 	if err != nil {
-		fmt.Println("Error reading response body:", err)
+		fmt.Println("DMALICIADEBUGSSH: Error reading response body:", err)
 		handleRequestError(err, resp)
 		return
 	}
-	fmt.Println("Response Body:", string(responseBody))
+	fmt.Println("DMALICIADEBUGSSH: Response Body:", string(responseBody))
 
 	// Debugging: Print response status and headers
 	printResponseInfo(httpResp)
 
 	if httpResp.StatusCode != http.StatusOK {
-		fmt.Println("Request did not succeed:", httpResp.Status)
-		fmt.Println("Response Headers:")
+		fmt.Println("DMALICIADEBUGSSH: Request did not succeed:", httpResp.Status)
+		fmt.Println("DMALICIADEBUGSSH: Response Headers:")
 		for key, values := range httpResp.Header {
 			for _, value := range values {
 				fmt.Printf("  %s: %s\n", key, value)
 			}
 		}
-		resp.Diagnostics.AddError("API Request Error", fmt.Sprintf("Request did not succeed: %s", httpResp.Status))
+		resp.Diagnostics.AddError("API Request Error", fmt.Sprintf("DMALICIADEBUGSSH: Request did not succeed: %s", httpResp.Status))
 		return
 	}
 
-	fmt.Println("SSH key registration completed successfully")
+	fmt.Println("DMALICIADEBUGSSH: SSH key registration completed successfully")
 
 	// Update resource state with populated data
 	resp.State.Set(ctx, &data)
 	// Delete the tfkey file
         err = os.Remove(filePath)
         if err != nil {
-	  fmt.Println("Error deleting tfkey file:", err)
+	  fmt.Println("DMALICIADEBUGSSH: Error deleting tfkey file:", err)
 	  // Handle the error if needed
         }
 }

@@ -4,7 +4,6 @@ import (
 	"context"
 	"log"
 	"net/http"
-	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
@@ -62,50 +61,33 @@ func (p *BitriseProvider) Configure(ctx context.Context, req provider.ConfigureR
 		return
 	}
 
-	//p.endpoint = config.Endpoint.String()
-	p.token = config.Token.String()
+	// Get the actual string values using ValueString()
+	endpoint := config.Endpoint.ValueString()
+	token := config.Token.ValueString()
 
-	// Remove any existing "https://" prefix from the endpoint value
-	p.endpoint = strings.TrimPrefix(config.Endpoint.String(), "https://")
-	dois := strings.TrimPrefix(config.Endpoint.String(), "https://")
-	cleanedDois := strings.Trim(dois, "\"")
-
-	// Construct the URL
-	url := "https://" + p.endpoint
+	// Store the endpoint as-is (with https:// if provided)
+	p.endpoint = endpoint
+	p.token = token
 
 	// Print the constructed URL for debugging purposes
-	log.Printf("Constructed URL: %s", url)
-	log.Printf("Constructed URL dois : %s", dois)
-	log.Printf("Constructed URL doiscleaned : %s", cleanedDois)
-
-	log.Printf("Configuring Bitrise provider with Endpoint: %s", p.endpoint)
-	log.Printf("Configuring Bitrise provider with Token: %s", p.token)
+	log.Printf("DMALICIADEBUG: Configuring Bitrise provider with Endpoint: %s", p.endpoint)
+	log.Printf("DMALICIADEBUG: Configuring Bitrise provider with Token: %s", p.token)
 
 	p.clientCreator = func(endpoint, token string) *http.Client {
-		// Remove any "https://" prefix and quotes from the endpoint value
-		cleanedEndpoint := strings.TrimPrefix(endpoint, "https://")
-		cleanedEndpoint = strings.Trim(cleanedEndpoint, "\"")
-
-		// Remove quotes from the token
-		cleanedToken := strings.Trim(token, "\"")
-
 		return &http.Client{
 			Transport: &authenticatedTransport{
-				token:    cleanedToken,
+				token:    token,
 				base:     http.DefaultTransport,
 				headers:  map[string]string{"Content-Type": "application/json"},
-				endpoint: cleanedEndpoint,
+				endpoint: endpoint,
 			},
 		}
 	}
 
 	resp.DataSourceData = p.clientCreator
+	resp.ResourceData = p.clientCreator
 
-	// Instead of resp.ResourceData2, set these values directly in the provider instance
-	p.endpoint = config.Endpoint.String()
-	p.token = config.Token.String()
-
-	log.Printf("Configured Endpoint: %s", p.endpoint)
+	log.Printf("DMALICIADEBUG: Configured Endpoint: %s", p.endpoint)
 
 }
 
@@ -132,6 +114,10 @@ type authenticatedTransport struct {
 
 func (t *authenticatedTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	req.Header.Set("Authorization", t.token)
+	// Apply all headers from the headers map
+	for key, value := range t.headers {
+		req.Header.Set(key, value)
+	}
 	return t.base.RoundTrip(req)
 }
 

@@ -125,11 +125,9 @@ func (r *AppFinishResource) Create(ctx context.Context, req resource.CreateReque
 	// Create an HTTP client using the client creator from the provider
 	client := r.clientCreator(r.endpoint, r.token)
 
-	// Construct the cleaned URL for creating the request
-	cleanedURL := strings.Trim(strings.TrimPrefix(r.endpoint, "https://"), "\"")
-
+	// Construct the URL for creating the request
 	appSlug := data.AppSlug
-	completeURL := fmt.Sprintf("%s/v0.1/apps/%s/finish", cleanedURL, appSlug)
+	completeURL := fmt.Sprintf("%s/v0.1/apps/%s/finish", r.endpoint, appSlug)
 
 	// Construct the payload data using the provided variables
 	payload := PayloadFinish{
@@ -149,12 +147,13 @@ func (r *AppFinishResource) Create(ctx context.Context, req resource.CreateReque
 		return
 	}
 
-	fmt.Println("Payload:", payload)
+	fmt.Println("DMALICIADEBUGFINISH: Payload:", payload)
+	fmt.Println("DMALICIADEBUGFINISH: PayloadJSON:", string(payloadJSON))
 
 	// Create an HTTP request
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", completeURL, strings.NewReader(string(payloadJSON)))
 	if err != nil {
-		fmt.Println("Error creating HTTP request:", err)
+		fmt.Println("DMALICIADEBUGFINISH: Error creating HTTP request:", err)
 		handleRequestError(err, resp)
 		return
 	}
@@ -163,13 +162,13 @@ func (r *AppFinishResource) Create(ctx context.Context, req resource.CreateReque
 
 	// Dump the HTTP request details
 	dump, _ := httputil.DumpRequest(httpReq, true)
-	fmt.Println("HTTP Request Dump:")
+	fmt.Println("DMALICIADEBUGFINISH: HTTP Request Dump:")
 	fmt.Println(string(dump))
 
 	// Send the HTTP request
 	httpResp, err := client.Do(httpReq)
 	if err != nil {
-		fmt.Println("Error sending HTTP request:", err)
+		fmt.Println("DMALICIADEBUGFINISH: Error sending HTTP request:", err)
 		handleRequestError(err, resp)
 		return
 	}
@@ -178,28 +177,28 @@ func (r *AppFinishResource) Create(ctx context.Context, req resource.CreateReque
 	// Read the response body
 	responseBody, err := io.ReadAll(httpResp.Body)
 	if err != nil {
-		fmt.Println("Error reading response body:", err)
+		fmt.Println("DMALICIADEBUGFINISH: Error reading response body:", err)
 		handleRequestError(err, resp)
 		return
 	}
-	fmt.Println("Response Body:", string(responseBody))
+	fmt.Println("DMALICIADEBUGFINISH: Response Body:", string(responseBody))
 
 	// Debugging: Print response status and headers
 	printResponseInfo(httpResp)
 
 	if httpResp.StatusCode != http.StatusOK {
-		fmt.Println("Request did not succeed:", httpResp.Status)
-		fmt.Println("Response Headers:")
+		fmt.Println("DMALICIADEBUGFINISH: Request did not succeed:", httpResp.Status)
+		fmt.Println("DMALICIADEBUGFINISH: Response Headers:")
 		for key, values := range httpResp.Header {
 			for _, value := range values {
 				fmt.Printf("  %s: %s\n", key, value)
 			}
 		}
-		resp.Diagnostics.AddError("API Request Error", fmt.Sprintf("Request did not succeed: %s", httpResp.Status))
+		resp.Diagnostics.AddError("API Request Error", fmt.Sprintf("DMALICIADEBUGFINISH: Request did not succeed: %s", httpResp.Status))
 		return
 	}
 
-	fmt.Println("App registration completed successfully")
+	fmt.Println("DMALICIADEBUGFINISH: App registration completed successfully")
 
 	// Update resource state with populated data
 	resp.State.Set(ctx, &data)
