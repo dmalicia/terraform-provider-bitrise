@@ -13,6 +13,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/zclconf/go-cty/cty"
 )
 
@@ -73,7 +74,7 @@ func (r *AppSSHResource) Schema(ctx context.Context, req resource.SchemaRequest,
 
 func (r *AppSSHResource) Configure(ctx context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
 	if req.ProviderData == nil {
-		fmt.Println("Provider data is missing.")
+		tflog.Debug(ctx, "Provider data is missing")
 		return
 	}
 	clientCreator, ok := req.ProviderData.(func(endpoint, token string) *http.Client)
@@ -87,7 +88,7 @@ func (r *AppSSHResource) Configure(ctx context.Context, req resource.ConfigureRe
 	}
 
 	r.clientCreator = clientCreator
-	fmt.Println("Provider configuration successful.")
+	tflog.Debug(ctx, "Provider configuration successful")
 }
 
 func (r *AppSSHResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
@@ -102,7 +103,7 @@ func (r *AppSSHResource) Create(ctx context.Context, req resource.CreateRequest,
 		return
 	}
 
-	fmt.Println("DMALICIADEBUGSSH: Starting AppSSHResource Create...")
+	tflog.Debug(ctx, "Starting AppSSHResource Create")
 
 	// Create an HTTP client using the client creator from the provider
 	client := r.clientCreator(r.endpoint, r.token)
@@ -116,7 +117,7 @@ func (r *AppSSHResource) Create(ctx context.Context, req resource.CreateRequest,
 
 	err := os.WriteFile(filePath, fileContent, 0644)
 	if err != nil {
-		fmt.Println("DMALICIADEBUGSSH: Error writing to file:", err)
+		tflog.Error(ctx, "Error writing to file", map[string]interface{}{"error": err.Error()})
 		return
 	}
 
@@ -124,13 +125,12 @@ func (r *AppSSHResource) Create(ctx context.Context, req resource.CreateRequest,
 	privateKeyPath := "testtfkey"
 	privateKeyBytes, err := os.ReadFile(privateKeyPath)
 	if err != nil {
-		fmt.Println("DMALICIADEBUGSSH: Error reading private key file:", err)
+		tflog.Error(ctx, "Error reading private key file", map[string]interface{}{"error": err.Error()})
 		return
 	}
 	privateKey := string(privateKeyBytes)
 
-	fmt.Println("DMALICIADEBUGSSH: Variable content written to file:", filePath)
-	fmt.Println("DMALICIADEBUGSSH: Private Key Content:", privateKey)
+	tflog.Debug(ctx, "Variable content written to file", map[string]interface{}{"file": filePath})
 
 	payload := Payload{
 		AuthSSHPrivateKey:                privateKey,
@@ -141,18 +141,17 @@ func (r *AppSSHResource) Create(ctx context.Context, req resource.CreateRequest,
 	// Marshal the payload struct into a JSON string
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
-		fmt.Println("DMALICIADEBUGSSH: Error marshaling JSON payload:", err)
+		tflog.Error(ctx, "Error marshaling JSON payload", map[string]interface{}{"error": err.Error()})
 		handleRequestError(err, resp)
 		return
 	}
 
-	fmt.Println("DMALICIADEBUGSSH: Payload:", payload)
-	fmt.Println("DMALICIADEBUGSSH: PayloadJSON:", string(payloadJSON))
+	tflog.Debug(ctx, "SSH key payload prepared", map[string]interface{}{"payload_json": string(payloadJSON)})
 
 	// Create an HTTP request
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", completeURL, strings.NewReader(string(payloadJSON)))
 	if err != nil {
-		fmt.Println("DMALICIADEBUGSSH: Error creating HTTP request:", err)
+		tflog.Error(ctx, "Error creating HTTP request", map[string]interface{}{"error": err.Error()})
 		handleRequestError(err, resp)
 		return
 	}
@@ -161,13 +160,12 @@ func (r *AppSSHResource) Create(ctx context.Context, req resource.CreateRequest,
 
 	// Dump the HTTP request details
 	dump, _ := httputil.DumpRequest(httpReq, true)
-	fmt.Println("DMALICIADEBUGSSH: HTTP Request Dump:")
-	fmt.Println(string(dump))
+	tflog.Debug(ctx, "HTTP Request", map[string]interface{}{"request": string(dump)})
 
 	// Send the HTTP request
 	httpResp, err := client.Do(httpReq)
 	if err != nil {
-		fmt.Println("DMALICIADEBUGSSH: Error sending HTTP request:", err)
+		tflog.Error(ctx, "Error sending HTTP request", map[string]interface{}{"error": err.Error()})
 		handleRequestError(err, resp)
 		return
 	}
@@ -176,35 +174,32 @@ func (r *AppSSHResource) Create(ctx context.Context, req resource.CreateRequest,
 	// Read the response body
 	responseBody, err := io.ReadAll(httpResp.Body)
 	if err != nil {
-		fmt.Println("DMALICIADEBUGSSH: Error reading response body:", err)
+		tflog.Error(ctx, "Error reading response body", map[string]interface{}{"error": err.Error()})
 		handleRequestError(err, resp)
 		return
 	}
-	fmt.Println("DMALICIADEBUGSSH: Response Body:", string(responseBody))
+	tflog.Debug(ctx, "Response body", map[string]interface{}{"body": string(responseBody)})
 
 	// Debugging: Print response status and headers
 	printResponseInfo(httpResp)
 
 	if httpResp.StatusCode != http.StatusOK {
-		fmt.Println("DMALICIADEBUGSSH: Request did not succeed:", httpResp.Status)
-		fmt.Println("DMALICIADEBUGSSH: Response Headers:")
-		for key, values := range httpResp.Header {
-			for _, value := range values {
-				fmt.Printf("  %s: %s\n", key, value)
-			}
-		}
-		resp.Diagnostics.AddError("API Request Error", fmt.Sprintf("DMALICIADEBUGSSH: Request did not succeed: %s", httpResp.Status))
+		tflog.Error(ctx, "Request did not succeed", map[string]interface{}{
+			"status": httpResp.Status,
+			"headers": httpResp.Header,
+		})
+		resp.Diagnostics.AddError("API Request Error", fmt.Sprintf("Request did not succeed: %s", httpResp.Status))
 		return
 	}
 
-	fmt.Println("DMALICIADEBUGSSH: SSH key registration completed successfully")
+	tflog.Info(ctx, "SSH key registration completed successfully")
 
 	// Update resource state with populated data
 	resp.State.Set(ctx, &data)
 	// Delete the tfkey file
         err = os.Remove(filePath)
         if err != nil {
-	  fmt.Println("DMALICIADEBUGSSH: Error deleting tfkey file:", err)
+	  tflog.Error(ctx, "Error deleting tfkey file", map[string]interface{}{"error": err.Error()})
 	  // Handle the error if needed
         }
 }

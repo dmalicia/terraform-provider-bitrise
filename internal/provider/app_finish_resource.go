@@ -12,6 +12,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
 type AppFinishResource struct {
@@ -91,7 +92,7 @@ func (r *AppFinishResource) Schema(ctx context.Context, req resource.SchemaReque
 
 func (r *AppFinishResource) Configure(ctx context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
 	if req.ProviderData == nil {
-		fmt.Println("Provider data is missing.")
+		tflog.Debug(ctx, "Provider data is missing")
 		return
 	}
 	clientCreator, ok := req.ProviderData.(func(endpoint, token string) *http.Client)
@@ -105,7 +106,7 @@ func (r *AppFinishResource) Configure(ctx context.Context, req resource.Configur
 	}
 
 	r.clientCreator = clientCreator
-	fmt.Println("Provider configuration successful.")
+	tflog.Debug(ctx, "Provider configuration successful")
 }
 
 func (r *AppFinishResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
@@ -120,7 +121,7 @@ func (r *AppFinishResource) Create(ctx context.Context, req resource.CreateReque
 		return
 	}
 
-	fmt.Println("Starting AppFinishResource Create...")
+	tflog.Debug(ctx, "Starting AppFinishResource Create")
 
 	// Create an HTTP client using the client creator from the provider
 	client := r.clientCreator(r.endpoint, r.token)
@@ -142,18 +143,17 @@ func (r *AppFinishResource) Create(ctx context.Context, req resource.CreateReque
 	// Marshal the payload struct into a JSON string
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
-		fmt.Println("Error marshaling JSON payload:", err)
+		tflog.Error(ctx, "Error marshaling JSON payload", map[string]interface{}{"error": err.Error()})
 		handleRequestError(err, resp)
 		return
 	}
 
-	fmt.Println("DMALICIADEBUGFINISH: Payload:", payload)
-	fmt.Println("DMALICIADEBUGFINISH: PayloadJSON:", string(payloadJSON))
+	tflog.Debug(ctx, "Request payload", map[string]interface{}{"payload_json": string(payloadJSON)})
 
 	// Create an HTTP request
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", completeURL, strings.NewReader(string(payloadJSON)))
 	if err != nil {
-		fmt.Println("DMALICIADEBUGFINISH: Error creating HTTP request:", err)
+		tflog.Error(ctx, "Error creating HTTP request", map[string]interface{}{"error": err.Error()})
 		handleRequestError(err, resp)
 		return
 	}
@@ -162,13 +162,12 @@ func (r *AppFinishResource) Create(ctx context.Context, req resource.CreateReque
 
 	// Dump the HTTP request details
 	dump, _ := httputil.DumpRequest(httpReq, true)
-	fmt.Println("DMALICIADEBUGFINISH: HTTP Request Dump:")
-	fmt.Println(string(dump))
+	tflog.Debug(ctx, "HTTP Request", map[string]interface{}{"request": string(dump)})
 
 	// Send the HTTP request
 	httpResp, err := client.Do(httpReq)
 	if err != nil {
-		fmt.Println("DMALICIADEBUGFINISH: Error sending HTTP request:", err)
+		tflog.Error(ctx, "Error sending HTTP request", map[string]interface{}{"error": err.Error()})
 		handleRequestError(err, resp)
 		return
 	}
@@ -177,28 +176,25 @@ func (r *AppFinishResource) Create(ctx context.Context, req resource.CreateReque
 	// Read the response body
 	responseBody, err := io.ReadAll(httpResp.Body)
 	if err != nil {
-		fmt.Println("DMALICIADEBUGFINISH: Error reading response body:", err)
+		tflog.Error(ctx, "Error reading response body", map[string]interface{}{"error": err.Error()})
 		handleRequestError(err, resp)
 		return
 	}
-	fmt.Println("DMALICIADEBUGFINISH: Response Body:", string(responseBody))
+	tflog.Debug(ctx, "Response body", map[string]interface{}{"body": string(responseBody)})
 
 	// Debugging: Print response status and headers
 	printResponseInfo(httpResp)
 
 	if httpResp.StatusCode != http.StatusOK {
-		fmt.Println("DMALICIADEBUGFINISH: Request did not succeed:", httpResp.Status)
-		fmt.Println("DMALICIADEBUGFINISH: Response Headers:")
-		for key, values := range httpResp.Header {
-			for _, value := range values {
-				fmt.Printf("  %s: %s\n", key, value)
-			}
-		}
-		resp.Diagnostics.AddError("API Request Error", fmt.Sprintf("DMALICIADEBUGFINISH: Request did not succeed: %s", httpResp.Status))
+		tflog.Error(ctx, "Request did not succeed", map[string]interface{}{
+			"status": httpResp.Status,
+			"headers": httpResp.Header,
+		})
+		resp.Diagnostics.AddError("API Request Error", fmt.Sprintf("Request did not succeed: %s", httpResp.Status))
 		return
 	}
 
-	fmt.Println("DMALICIADEBUGFINISH: App registration completed successfully")
+	tflog.Info(ctx, "App registration completed successfully")
 
 	// Update resource state with populated data
 	resp.State.Set(ctx, &data)
