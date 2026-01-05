@@ -2,7 +2,6 @@ package provider
 
 import (
 	"context"
-	"log"
 	"net/http"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
@@ -10,6 +9,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
 var _ provider.Provider = &BitriseProvider{}
@@ -69,9 +69,10 @@ func (p *BitriseProvider) Configure(ctx context.Context, req provider.ConfigureR
 	p.endpoint = endpoint
 	p.token = token
 
-	// Print the constructed URL for debugging purposes
-	log.Printf("DMALICIADEBUG: Configuring Bitrise provider with Endpoint: %s", p.endpoint)
-	log.Printf("DMALICIADEBUG: Configuring Bitrise provider with Token: %s", p.token)
+	// Log configuration for debugging
+	tflog.Debug(ctx, "MODULEDEBUG: Configuring Bitrise provider", map[string]interface{}{
+		"endpoint": p.endpoint,
+	})
 
 	p.clientCreator = func(endpoint, token string) *http.Client {
 		return &http.Client{
@@ -87,8 +88,7 @@ func (p *BitriseProvider) Configure(ctx context.Context, req provider.ConfigureR
 	resp.DataSourceData = p.clientCreator
 	resp.ResourceData = p.clientCreator
 
-	log.Printf("DMALICIADEBUG: Configured Endpoint: %s", p.endpoint)
-
+	tflog.Info(ctx, "Bitrise provider configured successfully")
 }
 
 func (p *BitriseProvider) Resources(ctx context.Context) []func() resource.Resource {
