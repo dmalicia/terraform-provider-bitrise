@@ -16,7 +16,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
-	"github.com/zclconf/go-cty/cty"
 )
 
 type AppResource struct {
@@ -221,6 +220,8 @@ func (r *AppResource) Create(ctx context.Context, req resource.CreateRequest, re
 	// Print the captured slug
 	tflog.Debug(ctx, "MODULEDEBUG: Captured app slug", map[string]interface{}{"slug": jsonResponse.Slug})
 	data.AppSlug = types.StringValue(jsonResponse.Slug)
+	// Use the app slug as the ID
+	data.Id = types.StringValue(jsonResponse.Slug)
 
 	// Debugging: Print response status and headers
 	printResponseInfo(httpResp)
@@ -233,9 +234,6 @@ func (r *AppResource) Create(ctx context.Context, req resource.CreateRequest, re
 		resp.Diagnostics.AddError("API Request Error", fmt.Sprintf("Request did not succeed: %s", httpResp.Status))
 		return
 	}
-
-	// Set example ID in data
-	data.Id = types.StringValue("example-id")
 
 	tflog.Info(ctx, "Resource created successfully")
 
@@ -270,6 +268,7 @@ func (r *AppResource) Delete(ctx context.Context, req resource.DeleteRequest, re
 	httpReq, err := http.NewRequestWithContext(ctx, "DELETE", completeURL, nil)
 	if err != nil {
 		tflog.Error(ctx, "Error creating HTTP request to delete APP", map[string]interface{}{"error": err.Error()})
+		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to create delete request: %s", err))
 		return
 	}
 
@@ -277,26 +276,28 @@ func (r *AppResource) Delete(ctx context.Context, req resource.DeleteRequest, re
 	httpResp, err := client.Do(httpReq)
 	if err != nil {
 		tflog.Error(ctx, "Error sending HTTP request", map[string]interface{}{"error": err.Error()})
+		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to delete app: %s", err))
 		return
 	}
 	defer httpResp.Body.Close()
 
-	// // Debugging: Print response status and headers
+	// Debugging: Print response status and headers
 	printResponseInfo(httpResp)
 
-	if httpResp.StatusCode != http.StatusOK {
+	if httpResp.StatusCode != http.StatusOK && httpResp.StatusCode != http.StatusNoContent {
+		responseBody, _ := io.ReadAll(httpResp.Body)
 		tflog.Error(ctx, "Delete request did not succeed", map[string]interface{}{
 			"status": httpResp.Status,
-			"headers": httpResp.Header,
+			"body":   string(responseBody),
 		})
-		// Optionally, you can add diagnostics here if needed
+		resp.Diagnostics.AddError("API Error", fmt.Sprintf("Unable to delete app: %s - %s", httpResp.Status, string(responseBody)))
 		return
 	}
 
 	tflog.Info(ctx, "Resource deleted successfully")
 
-	// Update resource state to indicate deletion
-	resp.State.Set(ctx, cty.NilVal)
+	// Remove resource from state
+	resp.State.RemoveResource(ctx)
 }
 
 func (r *AppResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
@@ -410,6 +411,8 @@ func (r *AppResource) Read(ctx context.Context, req resource.ReadRequest, resp *
 	if apiResponse.Data.Provider != "" {
 		data.Repo = types.StringValue(apiResponse.Data.Provider)
 	}
+	// Update ID with the app slug
+	data.Id = types.StringValue(apiResponse.Data.Slug)
 
 	tflog.Debug(ctx, "MODULEDEBUG: App details updated from API")
 
