@@ -33,7 +33,6 @@ type AppFinishResourceModel struct {
 }
 
 type PayloadFinish struct {
-	AppSlug          string            `json:"app_slug"`
 	ProjectType      string            `json:"project_type"`
 	StackID          string            `json:"stack_id"`
 	Config           string            `json:"config"`
