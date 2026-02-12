@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -32,12 +33,7 @@ type OrgGroupsDataSource struct {
 type OrgGroupsDataSourceModel struct {
 	OrgSlug types.String `tfsdk:"org_slug"`
 	ID      types.String `tfsdk:"id"`
-	Groups  []GroupModel `tfsdk:"groups"`
-}
-
-type GroupModel struct {
-	Slug types.String `tfsdk:"slug"`
-	Name types.String `tfsdk:"name"`
+	Groups  types.List   `tfsdk:"groups"`
 }
 
 type GroupAPIModel struct {
@@ -61,19 +57,13 @@ func (d *OrgGroupsDataSource) Schema(ctx context.Context, req datasource.SchemaR
 				MarkdownDescription: "Data source identifier (org_slug)",
 				Computed:            true,
 			},
-			"groups": schema.ListNestedAttribute{
+			"groups": schema.ListAttribute{
 				MarkdownDescription: "List of groups in the organization",
 				Computed:            true,
-				NestedObject: schema.NestedAttributeObject{
-					Attributes: map[string]schema.Attribute{
-						"slug": schema.StringAttribute{
-							MarkdownDescription: "The slug of the group",
-							Computed:            true,
-						},
-						"name": schema.StringAttribute{
-							MarkdownDescription: "The name of the group",
-							Computed:            true,
-						},
+				ElementType: types.ObjectType{
+					AttrTypes: map[string]attr.Type{
+						"slug": types.StringType,
+						"name": types.StringType,
 					},
 				},
 			},
@@ -153,20 +143,45 @@ func (d *OrgGroupsDataSource) Read(ctx context.Context, req datasource.ReadReque
 	}
 
 	// Convert API response to terraform model
-	groups := make([]GroupModel, 0, len(groupsResp))
+	groupObjects := make([]attr.Value, 0, len(groupsResp))
 	for _, group := range groupsResp {
-		groups = append(groups, GroupModel{
-			Slug: types.StringValue(group.Slug),
-			Name: types.StringValue(group.Name),
-		})
+		obj, diags := types.ObjectValue(
+			map[string]attr.Type{
+				"slug": types.StringType,
+				"name": types.StringType,
+			},
+			map[string]attr.Value{
+				"slug": types.StringValue(group.Slug),
+				"name": types.StringValue(group.Name),
+			},
+		)
+		resp.Diagnostics.Append(diags...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+		groupObjects = append(groupObjects, obj)
 	}
 
-	data.Groups = groups
+	groupsList, diags := types.ListValue(
+		types.ObjectType{
+			AttrTypes: map[string]attr.Type{
+				"slug": types.StringType,
+				"name": types.StringType,
+			},
+		},
+		groupObjects,
+	)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	data.Groups = groupsList
 	data.ID = types.StringValue(orgSlug)
 
 	tflog.Info(ctx, "Successfully read Bitrise organization groups", map[string]interface{}{
 		"org_slug":    orgSlug,
-		"group_count": len(groups),
+		"group_count": len(groupObjects),
 	})
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)

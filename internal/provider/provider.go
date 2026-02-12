@@ -138,6 +138,9 @@ func (p *BitriseProvider) DataSources(ctx context.Context) []func() datasource.D
 		func() datasource.DataSource {
 			return NewOrgGroupsDataSource(p.clientCreator, p.endpoint, p.token)
 		},
+		func() datasource.DataSource {
+			return NewAvailableStacksDataSource(p.clientCreator, p.endpoint, p.token)
+		},
 	}
 }
 
