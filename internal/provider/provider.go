@@ -102,6 +102,15 @@ func (p *BitriseProvider) Resources(ctx context.Context) []func() resource.Resou
 		func() resource.Resource {
 			return NewAppFinishResource(p.clientCreator, p.endpoint, p.token) // Return the custom resource type instance
 		},
+		func() resource.Resource {
+			return NewAppSecretsResource(p.clientCreator, p.endpoint, p.token) // Secrets resource
+		},
+		func() resource.Resource {
+			return NewAppBitriseYmlResource(p.clientCreator, p.endpoint, p.token) // Bitrise.yml resource
+		},
+		func() resource.Resource {
+			return NewAppRolesResource(p.clientCreator, p.endpoint, p.token) // Roles resource
+		},
 	}
 }
 
@@ -122,7 +131,17 @@ func (t *authenticatedTransport) RoundTrip(req *http.Request) (*http.Response, e
 }
 
 func (p *BitriseProvider) DataSources(ctx context.Context) []func() datasource.DataSource {
-	return []func() datasource.DataSource{}
+	return []func() datasource.DataSource{
+		func() datasource.DataSource {
+			return NewAppRolesDataSource(p.clientCreator, p.endpoint, p.token)
+		},
+		func() datasource.DataSource {
+			return NewOrgGroupsDataSource(p.clientCreator, p.endpoint, p.token)
+		},
+		func() datasource.DataSource {
+			return NewAvailableStacksDataSource(p.clientCreator, p.endpoint, p.token)
+		},
+	}
 }
 
 func New(version string) func() provider.Provider {

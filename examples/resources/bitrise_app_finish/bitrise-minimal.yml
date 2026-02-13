@@ -1,0 +1,22 @@
+---
+format_version: '11'
+default_step_lib_source: https://github.com/bitrise-io/bitrise-steplib.git
+project_type: other
+
+workflows:
+  primary:
+    steps:
+    - activate-ssh-key@4:
+        run_if: '{{getenv "SSH_RSA_PRIVATE_KEY" | ne ""}}'
+    - git-clone@8: {}
+    - script@1:
+        title: Build project
+        inputs:
+        - content: |-
+            #!/bin/bash
+            set -ex
+            echo "Add your build commands here"
+    - deploy-to-bitrise-io@2: {}
+
+app:
+  envs: []

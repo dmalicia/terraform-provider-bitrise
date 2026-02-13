@@ -1,0 +1,50 @@
+format_version: 11
+default_step_lib_source: https://github.com/bitrise-io/bitrise-steplib.git
+
+app:
+  envs:
+  - BITRISE_PROJECT_PATH: .
+    opts:
+      is_expand: false
+
+workflows:
+  primary:
+    description: |
+      Primary workflow for building and testing the application
+    steps:
+    - activate-ssh-key@4:
+        run_if: '{{getenv "SSH_RSA_PRIVATE_KEY" | ne ""}}'
+    - git-clone@8: {}
+    - cache-pull@2: {}
+    - script@1:
+        title: Install dependencies
+        inputs:
+        - content: |
+            #!/usr/bin/env bash
+            set -ex
+            # Add your dependency installation commands here
+            echo "Installing dependencies..."
+    - script@1:
+        title: Run tests
+        inputs:
+        - content: |
+            #!/usr/bin/env bash
+            set -ex
+            # Add your test commands here
+            echo "Running tests..."
+    - cache-push@2: {}
+    - deploy-to-bitrise-io@2: {}
+
+  deploy:
+    description: |
+      Deployment workflow
+    before_run:
+    - primary
+    steps:
+    - script@1:
+        title: Deploy application
+        inputs:
+        - content: |
+            #!/usr/bin/env bash
+            set -ex
+            echo "Deploying application..."
