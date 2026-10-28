@@ -1,14 +1,12 @@
 package provider
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"net/http/httputil"
-	"os"
-	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -58,6 +56,7 @@ func (r *AppSSHResource) Schema(ctx context.Context, req resource.SchemaRequest,
 			"auth_ssh_private_key": schema.StringAttribute{
 				MarkdownDescription: "Private SSH key for authentication",
 				Required:            true,
+				Sensitive:           true,
 			},
 			"auth_ssh_public_key": schema.StringAttribute{
 				MarkdownDescription: "Public SSH key for authentication",
@@ -91,116 +90,69 @@ func (r *AppSSHResource) Configure(ctx context.Context, req resource.ConfigureRe
 }
 
 func (r *AppSSHResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
-	// Initialize data to store API response
 	var data AppSSHResourceModel
 
-	// Populate data from Terraform plan
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
-
-	// Check for errors in diagnostics and return if found
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
 	tflog.Debug(ctx, "MODULEDEBUG: Starting AppSSHResource Create")
 
-	// Create an HTTP client using the client creator from the provider
-	client := r.clientCreator(r.endpoint, r.token)
-
-	// Construct the URL for creating the request
-	appSlug := data.AppSlug
-	completeURL := fmt.Sprintf("%s/v0.1/apps/%s/register-ssh-key", r.endpoint, appSlug)
-
-	filePath := "testtfkey"
-	fileContent := []byte(data.AuthSSHPrivateKey)
-
-	err := os.WriteFile(filePath, fileContent, 0644)
-	if err != nil {
-		tflog.Error(ctx, "Error writing to file", map[string]interface{}{"error": err.Error()})
-		return
-	}
-
-	// Construct the payload data using the provided variables
-	privateKeyPath := "testtfkey"
-	privateKeyBytes, err := os.ReadFile(privateKeyPath)
-	if err != nil {
-		tflog.Error(ctx, "Error reading private key file", map[string]interface{}{"error": err.Error()})
-		return
-	}
-	privateKey := string(privateKeyBytes)
-
-	tflog.Debug(ctx, "MODULEDEBUG: Variable content written to file", map[string]interface{}{"file": filePath})
-
-	payload := Payload{
-		AuthSSHPrivateKey:                privateKey,
-		AuthSSHPublicKey:                 data.AuthSSHPublicKey,
-		IsRegisterKeyIntoProviderService: data.IsRegisterKeyIntoProviderService,
-	}
-
-	// Marshal the payload struct into a JSON string
-	payloadJSON, err := json.Marshal(payload)
-	if err != nil {
-		tflog.Error(ctx, "Error marshaling JSON payload", map[string]interface{}{"error": err.Error()})
-		handleRequestError(err, resp)
-		return
-	}
-
-	tflog.Debug(ctx, "MODULEDEBUG: SSH key payload prepared", map[string]interface{}{"payload_json": string(payloadJSON)})
-
-	// Create an HTTP request
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", completeURL, strings.NewReader(string(payloadJSON)))
-	if err != nil {
-		tflog.Error(ctx, "Error creating HTTP request", map[string]interface{}{"error": err.Error()})
-		handleRequestError(err, resp)
-		return
-	}
-	// Set headers
-	httpReq.Header.Set("Content-Type", "application/json")
-
-	// Dump the HTTP request details
-	dump, _ := httputil.DumpRequest(httpReq, true)
-	tflog.Debug(ctx, "MODULEDEBUG: HTTP Request", map[string]interface{}{"request": string(dump)})
-
-	// Send the HTTP request
-	httpResp, err := client.Do(httpReq)
-	if err != nil {
-		tflog.Error(ctx, "Error sending HTTP request", map[string]interface{}{"error": err.Error()})
-		handleRequestError(err, resp)
-		return
-	}
-	defer httpResp.Body.Close()
-
-	// Read the response body
-	responseBody, err := io.ReadAll(httpResp.Body)
-	if err != nil {
-		tflog.Error(ctx, "Error reading response body", map[string]interface{}{"error": err.Error()})
-		handleRequestError(err, resp)
-		return
-	}
-	tflog.Debug(ctx, "MODULEDEBUG: Response body", map[string]interface{}{"body": string(responseBody)})
-
-	// Debugging: Print response status and headers
-	printResponseInfo(httpResp)
-
-	if httpResp.StatusCode != http.StatusOK {
-		tflog.Error(ctx, "Request did not succeed", map[string]interface{}{
-			"status": httpResp.Status,
-			"headers": httpResp.Header,
-		})
-		resp.Diagnostics.AddError("API Request Error", fmt.Sprintf("Request did not succeed: %s", httpResp.Status))
+	if err := r.registerSSHKey(ctx, data); err != nil {
+		resp.Diagnostics.AddError("API Request Error", fmt.Sprintf("Unable to register SSH key: %s", err))
 		return
 	}
 
 	tflog.Info(ctx, "SSH key registration completed successfully")
+	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+}
 
-	// Update resource state with populated data
-	resp.State.Set(ctx, &data)
-	// Delete the tfkey file
-        err = os.Remove(filePath)
-        if err != nil {
-	  tflog.Error(ctx, "Error deleting tfkey file", map[string]interface{}{"error": err.Error()})
-	  // Handle the error if needed
-        }
+// registerSSHKey posts the key pair to the register-ssh-key endpoint.
+//
+// The private key is sent straight from memory: it is never written to disk,
+// and neither the payload nor the request body is logged, so it cannot leak
+// through TF_LOG=DEBUG output.
+func (r *AppSSHResource) registerSSHKey(ctx context.Context, data AppSSHResourceModel) error {
+	client := r.clientCreator(r.endpoint, r.token)
+	completeURL := fmt.Sprintf("%s/v0.1/apps/%s/register-ssh-key", r.endpoint, data.AppSlug)
+
+	payloadJSON, err := json.Marshal(Payload{
+		AuthSSHPrivateKey:                data.AuthSSHPrivateKey,
+		AuthSSHPublicKey:                 data.AuthSSHPublicKey,
+		IsRegisterKeyIntoProviderService: data.IsRegisterKeyIntoProviderService,
+	})
+	if err != nil {
+		return fmt.Errorf("marshaling payload: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, completeURL, bytes.NewReader(payloadJSON))
+	if err != nil {
+		return fmt.Errorf("creating request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	tflog.Debug(ctx, "MODULEDEBUG: Registering SSH key", map[string]interface{}{
+		"url":                                   completeURL,
+		"is_register_key_into_provider_service": data.IsRegisterKeyIntoProviderService,
+	})
+
+	httpResp, err := client.Do(httpReq)
+	if err != nil {
+		return fmt.Errorf("sending request: %w", err)
+	}
+	defer httpResp.Body.Close()
+
+	responseBody, err := io.ReadAll(httpResp.Body)
+	if err != nil {
+		return fmt.Errorf("reading response: %w", err)
+	}
+
+	if httpResp.StatusCode != http.StatusOK {
+		return fmt.Errorf("request did not succeed: %s - %s", httpResp.Status, string(responseBody))
+	}
+
+	return nil
 }
 
 func (r *AppSSHResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
@@ -288,98 +240,20 @@ func (r *AppSSHResource) Read(ctx context.Context, req resource.ReadRequest, res
 func (r *AppSSHResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
 	var data AppSSHResourceModel
 
-	// Read Terraform plan data into the model
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
-
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
 	tflog.Debug(ctx, "MODULEDEBUG: Starting AppSSHResource Update")
 
-	// Create an HTTP client using the client creator from the provider
-	client := r.clientCreator(r.endpoint, r.token)
-
-	// Construct the URL for updating the request
-	appSlug := data.AppSlug
-	completeURL := fmt.Sprintf("%s/v0.1/apps/%s/register-ssh-key", r.endpoint, appSlug)
-
-	// Write private key to temporary file
-	filePath := "testtfkey"
-	fileContent := []byte(data.AuthSSHPrivateKey)
-	err := os.WriteFile(filePath, fileContent, 0644)
-	if err != nil {
-		tflog.Error(ctx, "Error writing to file", map[string]interface{}{"error": err.Error()})
-		resp.Diagnostics.AddError("File Error", fmt.Sprintf("Unable to write private key: %s", err))
-		return
-	}
-	defer os.Remove(filePath)
-
-	// Read private key from file
-	privateKeyBytes, err := os.ReadFile(filePath)
-	if err != nil {
-		tflog.Error(ctx, "Error reading private key file", map[string]interface{}{"error": err.Error()})
-		resp.Diagnostics.AddError("File Error", fmt.Sprintf("Unable to read private key: %s", err))
-		return
-	}
-	privateKey := string(privateKeyBytes)
-
-	payload := Payload{
-		AuthSSHPrivateKey:                privateKey,
-		AuthSSHPublicKey:                 data.AuthSSHPublicKey,
-		IsRegisterKeyIntoProviderService: data.IsRegisterKeyIntoProviderService,
-	}
-
-	// Marshal the payload struct into a JSON string
-	payloadJSON, err := json.Marshal(payload)
-	if err != nil {
-		tflog.Error(ctx, "Error marshaling JSON payload", map[string]interface{}{"error": err.Error()})
-		resp.Diagnostics.AddError("JSON Error", fmt.Sprintf("Unable to marshal payload: %s", err))
-		return
-	}
-
-	tflog.Debug(ctx, "MODULEDEBUG: Update request payload", map[string]interface{}{"payload_json": string(payloadJSON)})
-
-	// Create an HTTP request
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", completeURL, strings.NewReader(string(payloadJSON)))
-	if err != nil {
-		tflog.Error(ctx, "Error creating HTTP request", map[string]interface{}{"error": err.Error()})
-		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to create request: %s", err))
-		return
-	}
-
-	// Send the HTTP request
-	httpResp, err := client.Do(httpReq)
-	if err != nil {
-		tflog.Error(ctx, "Error sending HTTP request", map[string]interface{}{"error": err.Error()})
-		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to update SSH key: %s", err))
-		return
-	}
-	defer httpResp.Body.Close()
-
-	// Read the response body
-	responseBody, err := io.ReadAll(httpResp.Body)
-	if err != nil {
-		tflog.Error(ctx, "Error reading response body", map[string]interface{}{"error": err.Error()})
-		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read response: %s", err))
-		return
-	}
-
-	tflog.Debug(ctx, "MODULEDEBUG: Response Body", map[string]interface{}{"body": string(responseBody)})
-
-	if httpResp.StatusCode != http.StatusOK {
-		tflog.Error(ctx, "Request did not succeed", map[string]interface{}{
-			"status": httpResp.Status,
-			"body":   string(responseBody),
-		})
-		resp.Diagnostics.AddError("API Request Error", fmt.Sprintf("Request did not succeed: %s - %s", httpResp.Status, string(responseBody)))
+	if err := r.registerSSHKey(ctx, data); err != nil {
+		resp.Diagnostics.AddError("API Request Error", fmt.Sprintf("Unable to update SSH key: %s", err))
 		return
 	}
 
 	tflog.Info(ctx, "SSH key updated successfully")
-
-	// Save updated data into Terraform state
-	resp.State.Set(ctx, &data)
+	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
 func (r *AppSSHResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
