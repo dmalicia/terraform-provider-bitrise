@@ -66,7 +66,8 @@ For more information, see the [Bitrise API documentation](https://api-docs.bitri
 
 ## Notes
 
-* The private SSH key is temporarily written to a local file during resource creation for processing. This file is managed securely but be aware of this behavior.
+* The private SSH key is sent to the Bitrise API directly from memory. It is never written to disk, and it is not included in debug logs (`TF_LOG=DEBUG`).
+* The private key is stored in the Terraform state like any other sensitive attribute. Use an encrypted remote backend and restrict access to the state.
 * You must have valid SSH key pairs. The public and private keys must match.
 * If `is_register_key_into_provider_service` is `true`, Bitrise must have access to your git provider to register the public key.
 * SSH keys are essential for private repositories and repositories that require authenticated access.
