@@ -292,6 +292,8 @@ func (r *AppResource) Update(ctx context.Context, req resource.UpdateRequest, re
 // ImportState imports an app by its slug.
 func (r *AppResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
+	// Read and Update address the app by app_slug, so it must be set too.
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("app_slug"), req.ID)...)
 }
 
 // appCallDiags returns the diagnostics shared by the app, app finish and app SSH resources.
