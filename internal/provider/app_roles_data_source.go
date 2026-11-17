@@ -2,49 +2,48 @@ package provider
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
-	"github.com/hashicorp/terraform-plugin-log/tflog"
+
+	"terraform-provider-bitrise/internal/bitriseapi"
 )
 
-var _ datasource.DataSource = &AppRolesDataSource{}
+var _ datasource.DataSourceWithConfigure = &AppRolesDataSource{}
 
-func NewAppRolesDataSource(clientCreator func(endpoint, token string) *http.Client, endpoint, token string) *AppRolesDataSource {
-	return &AppRolesDataSource{
-		clientCreator: clientCreator,
-		endpoint:      endpoint,
-		token:         token,
-	}
+// NewAppRolesDataSource returns a new bitrise_app_roles data source.
+func NewAppRolesDataSource() datasource.DataSource {
+	return &AppRolesDataSource{}
 }
 
+// AppRolesDataSource reads the groups assigned to a role of a Bitrise app.
 type AppRolesDataSource struct {
-	clientCreator func(endpoint, token string) *http.Client
-	endpoint      string
-	token         string
+	dataSourceWithClient
 }
 
+// AppRolesDataSourceModel describes the bitrise_app_roles data source data model.
 type AppRolesDataSourceModel struct {
-	AppSlug             types.String   `tfsdk:"app_slug"`
-	RoleName            types.String   `tfsdk:"role_name"`
-	ID                  types.String   `tfsdk:"id"`
-	Groups              []types.String `tfsdk:"groups"`
+	AppSlug  types.String   `tfsdk:"app_slug"`
+	RoleName types.String   `tfsdk:"role_name"`
+	ID       types.String   `tfsdk:"id"`
+	Groups   []types.String `tfsdk:"groups"`
 }
 
+// GroupRolesResponse is the response body listing the groups of a role.
 type GroupRolesResponse struct {
 	Groups []string `json:"groups"`
 }
 
-func (d *AppRolesDataSource) Metadata(ctx context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {
+// Metadata returns the data source type name.
+func (d *AppRolesDataSource) Metadata(_ context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_app_roles"
 }
 
-func (d *AppRolesDataSource) Schema(ctx context.Context, req datasource.SchemaRequest, resp *datasource.SchemaResponse) {
+// Schema returns the data source schema.
+func (d *AppRolesDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		MarkdownDescription: "Retrieves the list of groups assigned to a specific role type for a Bitrise application.",
 		Attributes: map[string]schema.Attribute{
@@ -69,26 +68,9 @@ func (d *AppRolesDataSource) Schema(ctx context.Context, req datasource.SchemaRe
 	}
 }
 
-func (d *AppRolesDataSource) Configure(ctx context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
-	if req.ProviderData == nil {
-		return
-	}
-
-	clientCreator, ok := req.ProviderData.(func(endpoint, token string) *http.Client)
-	if !ok {
-		resp.Diagnostics.AddError(
-			"Unexpected Data Source Configure Type",
-			fmt.Sprintf("Expected func(endpoint, token string) *http.Client, got: %T", req.ProviderData),
-		)
-		return
-	}
-
-	d.clientCreator = clientCreator
-}
-
+// Read reads the groups of the role.
 func (d *AppRolesDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
 	var data AppRolesDataSourceModel
-
 	resp.Diagnostics.Append(req.Config.Get(ctx, &data)...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -96,66 +78,22 @@ func (d *AppRolesDataSource) Read(ctx context.Context, req datasource.ReadReques
 
 	appSlug := data.AppSlug.ValueString()
 	roleName := data.RoleName.ValueString()
-
-	tflog.Debug(ctx, "Reading Bitrise app role groups", map[string]interface{}{
-		"app_slug":  appSlug,
-		"role_name": roleName,
-	})
-
-	client := d.clientCreator(d.endpoint, d.token)
-	url := fmt.Sprintf("%s/v0.1/apps/%s/roles/%s", d.endpoint, appSlug, roleName)
-
-	httpReq, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		resp.Diagnostics.AddError("Error creating HTTP request", err.Error())
-		return
-	}
-
-	httpResp, err := client.Do(httpReq)
-	if err != nil {
-		resp.Diagnostics.AddError("Error sending HTTP request", err.Error())
-		return
-	}
-	defer httpResp.Body.Close()
-
-	responseBody, err := io.ReadAll(httpResp.Body)
-	if err != nil {
-		resp.Diagnostics.AddError("Error reading response body", err.Error())
-		return
-	}
-
-	if httpResp.StatusCode != http.StatusOK {
-		tflog.Error(ctx, "Failed to read role groups", map[string]interface{}{
-			"status": httpResp.Status,
-			"body":   string(responseBody),
-		})
-		resp.Diagnostics.AddError(
-			"API Error",
-			fmt.Sprintf("Failed to read role groups: %s - %s", httpResp.Status, string(responseBody)),
-		)
-		return
-	}
-
 	var rolesResp GroupRolesResponse
-	if err := json.Unmarshal(responseBody, &rolesResp); err != nil {
-		resp.Diagnostics.AddError("Error parsing response", err.Error())
+	err := d.client.Do(ctx, bitriseapi.Request{
+		Op:     fmt.Sprintf("read groups of role %s of app %s", roleName, appSlug),
+		Method: http.MethodGet,
+		Path:   bitriseapi.AppRolePath(appSlug, roleName),
+	}, &rolesResp)
+	if err != nil {
+		standardCallDiags("Failed to read role groups: %s - %s").add(&resp.Diagnostics, err)
 		return
 	}
 
-	// Convert API response to terraform model
 	groups := make([]types.String, 0, len(rolesResp.Groups))
 	for _, group := range rolesResp.Groups {
 		groups = append(groups, types.StringValue(group))
 	}
-
 	data.Groups = groups
 	data.ID = types.StringValue(fmt.Sprintf("%s/%s", appSlug, roleName))
-
-	tflog.Info(ctx, "Successfully read Bitrise app role groups", map[string]interface{}{
-		"app_slug":    appSlug,
-		"role_name":   roleName,
-		"group_count": len(groups),
-	})
-
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
