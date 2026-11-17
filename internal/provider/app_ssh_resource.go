@@ -161,9 +161,9 @@ func (r *AppSSHResource) Update(ctx context.Context, req resource.UpdateRequest,
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
-// ImportState imports the resource by ID.
+// ImportState imports the resource by app slug.
 func (r *AppSSHResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
+	resource.ImportStatePassthroughID(ctx, path.Root("app_slug"), req, resp)
 }
 
 func (r *AppSSHResource) register(ctx context.Context, data AppSSHResourceModel, privateKey string) error {
