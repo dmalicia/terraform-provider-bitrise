@@ -6,8 +6,12 @@ import (
 	"net/http"
 )
 
-// ErrNotFound matches, via errors.Is, a response with status 404.
-var ErrNotFound = errors.New("not found")
+var (
+	// ErrNotFound matches, via errors.Is, a response with status 404.
+	ErrNotFound = errors.New("not found")
+	// ErrBodyTooLarge reports an accepted response body larger than 1 MiB.
+	ErrBodyTooLarge = errors.New("response body exceeds 1 MiB")
+)
 
 // StatusError reports a response whose status code the caller did not accept.
 type StatusError struct {

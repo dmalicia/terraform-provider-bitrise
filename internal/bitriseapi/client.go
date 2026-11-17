@@ -9,12 +9,19 @@ import (
 	"net/http"
 	"slices"
 	"time"
+	"unicode/utf8"
 
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
-// requestTimeout bounds each API call, so an unresponsive API cannot hang Terraform.
-const requestTimeout = 60 * time.Second
+const (
+	// requestTimeout bounds each API call, so an unresponsive API cannot hang Terraform.
+	requestTimeout = 60 * time.Second
+	// maxBodyBytes bounds accepted bodies; the largest, bitrise.yml, is capped at 400 KB by the API.
+	maxBodyBytes = 1 << 20
+	// maxErrorBodyBytes bounds the excerpt of a rejected body kept in a StatusError.
+	maxErrorBodyBytes = 4 << 10
+)
 
 // Client sends authenticated JSON requests to the Bitrise API.
 type Client struct {
@@ -80,9 +87,12 @@ func (c *Client) Do(ctx context.Context, req Request, out any) error {
 		return nil
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes+1))
 	if err != nil {
 		return &CallError{Op: req.Op, Stage: StageRead, Err: err}
+	}
+	if len(body) > maxBodyBytes {
+		return &CallError{Op: req.Op, Stage: StageRead, Err: ErrBodyTooLarge}
 	}
 	if raw, ok := out.(*RawResponse); ok {
 		raw.ContentType = resp.Header.Get("Content-Type")
@@ -121,12 +131,24 @@ func accepted(codes []int, code int) bool {
 
 // rejected turns a response with an unexpected status into a StatusError.
 func rejected(op string, resp *http.Response) error {
-	body, err := io.ReadAll(resp.Body)
-	statusErr := &StatusError{Op: op, Code: resp.StatusCode, Body: string(body), status: resp.Status}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyBytes+1))
+	statusErr := &StatusError{Op: op, Code: resp.StatusCode, Body: excerpt(body), status: resp.Status}
 	if err != nil {
 		return &CallError{Op: op, Stage: StageRead, Err: err, status: statusErr}
 	}
 	return statusErr
+}
+
+// excerpt returns body, cut at a rune boundary and marked when longer than maxErrorBodyBytes.
+func excerpt(body []byte) string {
+	if len(body) <= maxErrorBodyBytes {
+		return string(body)
+	}
+	cut := maxErrorBodyBytes
+	for cut > 0 && !utf8.RuneStart(body[cut]) {
+		cut--
+	}
+	return string(body[:cut]) + " [truncated]"
 }
 
 // drainAndClose lets the transport reuse the connection without reading unbounded data.

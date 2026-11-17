@@ -16,6 +16,7 @@ BUG FIXES:
 * `bitrise_app_secret`: Send `false` flags on create; `expand_in_step_inputs = false` was dropped, so the API default applied and every plan showed a diff
 * `data.bitrise_available_stacks`: Return `stack_keys` sorted instead of in random order
 * Time out API requests after 60 seconds instead of waiting indefinitely for an unresponsive API
+* Reject API responses larger than 1 MiB and truncate error response bodies in diagnostics to 4 KiB instead of reading them without limit
 
 ## 0.1.0 (Unreleased)
 
