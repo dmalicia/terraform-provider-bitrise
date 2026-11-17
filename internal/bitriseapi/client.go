@@ -8,9 +8,13 @@ import (
 	"io"
 	"net/http"
 	"slices"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
+
+// requestTimeout bounds each API call, so an unresponsive API cannot hang Terraform.
+const requestTimeout = 60 * time.Second
 
 // Client sends authenticated JSON requests to the Bitrise API.
 type Client struct {
@@ -24,6 +28,7 @@ func New(baseURL, token string) *Client {
 		baseURL: baseURL,
 		httpClient: &http.Client{
 			Transport: &authTransport{token: token, base: http.DefaultTransport},
+			Timeout:   requestTimeout,
 		},
 	}
 }
