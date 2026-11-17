@@ -407,7 +407,7 @@ func (a *fakeAPI) createOrgSecret(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	secret := &orgSecretResponse{
-		ID: key, Name: req.Name, Value: req.Value, Scope: "workspace",
+		ID: key, Name: req.Name, Value: &req.Value, Scope: "workspace",
 		IsProtected: req.IsProtected, IsExposedForPullRequests: req.IsExposedForPullRequests, ExpandInStepInputs: req.ExpandInStepInputs,
 	}
 	a.orgSecrets[key] = secret
@@ -437,7 +437,7 @@ func (a *fakeAPI) updateOrgSecret(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"message": "Not Found"})
 		return
 	}
-	secret.Value = req.Value
+	secret.Value = &req.Value
 	secret.IsProtected = req.IsProtected
 	secret.IsExposedForPullRequests = req.IsExposedForPullRequests
 	secret.ExpandInStepInputs = req.ExpandInStepInputs
@@ -482,7 +482,7 @@ func (s *SecretResponse) redacted() SecretResponse {
 func (s *orgSecretResponse) redacted() orgSecretResponse {
 	out := *s
 	if out.IsProtected {
-		out.Value = ""
+		out.Value = nil
 	}
 	return out
 }
@@ -511,3 +511,5 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 func oversizedJSON() string {
 	return `{"padding":"` + strings.Repeat("a", 1<<20) + `"}`
 }
+
+func stringPtr(s string) *string { return &s }

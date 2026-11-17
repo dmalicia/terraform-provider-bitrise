@@ -50,7 +50,7 @@ func TestOrgSecretResource_Create_sendsSecretAndStoresScope(t *testing.T) {
 func TestOrgSecretResource_Create_whenSecretExists_reportsConflict(t *testing.T) {
 	api := newFakeAPI(t)
 	api.update(func(a *fakeAPI) {
-		a.orgSecrets["org-abc/MY_SECRET"] = &orgSecretResponse{Name: "MY_SECRET", Value: "old"}
+		a.orgSecrets["org-abc/MY_SECRET"] = &orgSecretResponse{Name: "MY_SECRET", Value: stringPtr("old")}
 	})
 
 	runUnitTest(t, resource.TestCase{
@@ -163,10 +163,28 @@ func TestOrgSecretResource_Read_whenValueChangedRemotely_detectsDrift(t *testing
 		Steps: []resource.TestStep{
 			{Config: orgSecretConfig(api, "s3cr3t", "")},
 			{
-				PreConfig:          func() { api.update(func(a *fakeAPI) { a.orgSecrets["org-abc/MY_SECRET"].Value = "changed" }) },
+				PreConfig: func() {
+					api.update(func(a *fakeAPI) { a.orgSecrets["org-abc/MY_SECRET"].Value = stringPtr("changed") })
+				},
 				RefreshState:       true,
 				ExpectNonEmptyPlan: true,
 				Check:              resource.TestCheckResourceAttr("bitrise_org_secret.test", "value", "changed"),
+			},
+		},
+	})
+}
+
+func TestOrgSecretResource_Read_whenValueEmptiedRemotely_detectsDrift(t *testing.T) {
+	api := newFakeAPI(t)
+
+	runUnitTest(t, resource.TestCase{
+		Steps: []resource.TestStep{
+			{Config: orgSecretConfig(api, "s3cr3t", "")},
+			{
+				PreConfig:          func() { api.update(func(a *fakeAPI) { a.orgSecrets["org-abc/MY_SECRET"].Value = stringPtr("") }) },
+				RefreshState:       true,
+				ExpectNonEmptyPlan: true,
+				Check:              resource.TestCheckResourceAttr("bitrise_org_secret.test", "value", ""),
 			},
 		},
 	})
