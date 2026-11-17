@@ -10,6 +10,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 
 	"terraform-provider-bitrise/internal/bitriseapi"
@@ -39,10 +40,10 @@ func NewAppSSHResource() resource.Resource {
 
 // AppSSHResourceModel describes the bitrise_app_ssh resource data model.
 type AppSSHResourceModel struct {
-	AppSlug                          string `tfsdk:"app_slug"`
-	AuthSSHPrivateKey                string `tfsdk:"auth_ssh_private_key"`
-	AuthSSHPublicKey                 string `tfsdk:"auth_ssh_public_key"`
-	IsRegisterKeyIntoProviderService bool   `tfsdk:"is_register_key_into_provider_service"`
+	AppSlug                          types.String `tfsdk:"app_slug"`
+	AuthSSHPrivateKey                types.String `tfsdk:"auth_ssh_private_key"`
+	AuthSSHPublicKey                 types.String `tfsdk:"auth_ssh_public_key"`
+	IsRegisterKeyIntoProviderService types.Bool   `tfsdk:"is_register_key_into_provider_service"`
 }
 
 // Metadata returns the resource type name.
@@ -86,7 +87,7 @@ func (r *AppSSHResource) Create(ctx context.Context, req resource.CreateRequest,
 		return
 	}
 
-	if err := os.WriteFile(sshKeyFile, []byte(data.AuthSSHPrivateKey), 0o644); err != nil {
+	if err := os.WriteFile(sshKeyFile, []byte(data.AuthSSHPrivateKey.ValueString()), 0o644); err != nil {
 		tflog.Error(ctx, "Error writing to file", map[string]interface{}{"error": err.Error()})
 		return
 	}
@@ -126,7 +127,7 @@ func (r *AppSSHResource) Read(ctx context.Context, req resource.ReadRequest, res
 		return
 	}
 
-	if !readAppExists(ctx, r.client, data.AppSlug, resp) {
+	if !readAppExists(ctx, r.client, data.AppSlug.ValueString(), resp) {
 		return
 	}
 
@@ -141,7 +142,7 @@ func (r *AppSSHResource) Update(ctx context.Context, req resource.UpdateRequest,
 		return
 	}
 
-	if err := os.WriteFile(sshKeyFile, []byte(data.AuthSSHPrivateKey), 0o644); err != nil {
+	if err := os.WriteFile(sshKeyFile, []byte(data.AuthSSHPrivateKey.ValueString()), 0o644); err != nil {
 		resp.Diagnostics.AddError("File Error", fmt.Sprintf("Unable to write private key: %s", err))
 		return
 	}
@@ -166,18 +167,19 @@ func (r *AppSSHResource) ImportState(ctx context.Context, req resource.ImportSta
 }
 
 func (r *AppSSHResource) register(ctx context.Context, data AppSSHResourceModel, privateKey string) error {
+	appSlug := data.AppSlug.ValueString()
 	payload := Payload{
 		AuthSSHPrivateKey:                privateKey,
-		AuthSSHPublicKey:                 data.AuthSSHPublicKey,
-		IsRegisterKeyIntoProviderService: data.IsRegisterKeyIntoProviderService,
+		AuthSSHPublicKey:                 data.AuthSSHPublicKey.ValueString(),
+		IsRegisterKeyIntoProviderService: data.IsRegisterKeyIntoProviderService.ValueBool(),
 	}
 	payloadJSON, _ := json.Marshal(payload)
 	tflog.Debug(ctx, "MODULEDEBUG: SSH key payload prepared", map[string]interface{}{"payload_json": string(payloadJSON)})
 
 	return r.client.Do(ctx, bitriseapi.Request{
-		Op:     "register SSH key of app " + data.AppSlug,
+		Op:     "register SSH key of app " + appSlug,
 		Method: http.MethodPost,
-		Path:   bitriseapi.AppSSHKeyPath(data.AppSlug),
+		Path:   bitriseapi.AppSSHKeyPath(appSlug),
 		Body:   payload,
 	}, &bitriseapi.RawResponse{})
 }
