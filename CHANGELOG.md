@@ -12,6 +12,7 @@ BUG FIXES:
 * `bitrise_app`: Omitting `is_public` no longer causes a perpetual diff
 * `bitrise_app_ssh`: Omitting `is_register_key_into_provider_service` no longer fails with a value conversion error
 * `bitrise_app_finish`, `bitrise_app_ssh`: Fix import, which failed with a value conversion or state write error; both are imported by app slug
+* `bitrise_app_ssh`: Stop writing the private key to a `testtfkey` file in the working directory and to debug logs
 
 ## 0.1.0 (Unreleased)
 
