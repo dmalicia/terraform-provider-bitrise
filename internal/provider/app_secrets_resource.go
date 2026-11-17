@@ -46,12 +46,13 @@ type AppSecretsResourceModel struct {
 }
 
 // SecretCreateRequest is the request body that creates an app secret.
+// Booleans are always sent so that false does not fall back to the API default.
 type SecretCreateRequest struct {
 	Name                     string `json:"name"`
 	Value                    string `json:"value"`
-	IsProtected              bool   `json:"is_protected,omitempty"`
-	IsExposedForPullRequests bool   `json:"is_exposed_for_pull_requests,omitempty"`
-	ExpandInStepInputs       bool   `json:"expand_in_step_inputs,omitempty"`
+	IsProtected              bool   `json:"is_protected"`
+	IsExposedForPullRequests bool   `json:"is_exposed_for_pull_requests"`
+	ExpandInStepInputs       bool   `json:"expand_in_step_inputs"`
 }
 
 // SecretUpdateRequest is the request body that updates an app secret.
