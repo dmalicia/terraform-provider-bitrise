@@ -14,6 +14,7 @@ BUG FIXES:
 * `bitrise_app_finish`, `bitrise_app_ssh`: Fix import, which failed with a value conversion or state write error; both are imported by app slug
 * `bitrise_app_ssh`: Stop writing the private key to a `testtfkey` file in the working directory and to debug logs
 * `bitrise_app_secret`: Send `false` flags on create; `expand_in_step_inputs = false` was dropped, so the API default applied and every plan showed a diff
+* `data.bitrise_available_stacks`: Return `stack_keys` sorted instead of in random order
 
 ## 0.1.0 (Unreleased)
 
