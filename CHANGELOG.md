@@ -4,6 +4,10 @@ FEATURES:
 
 * **New Resource:** `bitrise_org_secret` - Manage workspace (organization) secrets shared by all apps in a Bitrise workspace
 
+BUG FIXES:
+
+* `bitrise_app`, `bitrise_app_finish`, `bitrise_app_ssh`: Report API and network errors on create instead of failing with a generic "Missing Resource State After Create" error
+
 ## 0.1.0 (Unreleased)
 
 FEATURES:
