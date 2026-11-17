@@ -2,7 +2,9 @@ package provider
 
 import (
 	"context"
+	"maps"
 	"net/http"
+	"slices"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
@@ -71,8 +73,9 @@ func (d *AvailableStacksDataSource) Read(ctx context.Context, req datasource.Rea
 		return
 	}
 
+	// Map iteration order is random; sort so the list is stable between reads.
 	stackKeys := make([]types.String, 0, len(stacksMap))
-	for key := range stacksMap {
+	for _, key := range slices.Sorted(maps.Keys(stacksMap)) {
 		stackKeys = append(stackKeys, types.StringValue(key))
 	}
 	data.ID = types.StringValue("available-stacks")
