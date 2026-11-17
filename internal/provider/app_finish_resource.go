@@ -2,26 +2,30 @@ package provider
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
 	"net/http"
-	"net/http/httputil"
-	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
+
+	"terraform-provider-bitrise/internal/bitriseapi"
 )
 
+var (
+	_ resource.ResourceWithConfigure   = &AppFinishResource{}
+	_ resource.ResourceWithImportState = &AppFinishResource{}
+)
+
+// AppFinishResource finishes the setup of a registered Bitrise app.
 type AppFinishResource struct {
-	clientCreator func(endpoint, token string) *http.Client
-	endpoint      string
-	token         string
+	resourceWithClient
 }
 
+// AppFinishResourceModel describes the bitrise_app_finish resource data model.
 type AppFinishResourceModel struct {
 	AppSlug          string            `tfsdk:"app_slug"`
 	ProjectType      string            `tfsdk:"project_type"`
@@ -32,6 +36,7 @@ type AppFinishResourceModel struct {
 	OrganizationSlug string            `tfsdk:"organization_slug"`
 }
 
+// PayloadFinish is the request body of the finish endpoint.
 type PayloadFinish struct {
 	ProjectType      string            `json:"project_type"`
 	StackID          string            `json:"stack_id"`
@@ -41,19 +46,18 @@ type PayloadFinish struct {
 	OrganizationSlug string            `json:"organization_slug"`
 }
 
-func NewAppFinishResource(clientCreator func(endpoint, token string) *http.Client, endpoint, token string) *AppFinishResource {
-	return &AppFinishResource{
-		clientCreator: clientCreator,
-		endpoint:      endpoint,
-		token:         token,
-	}
+// NewAppFinishResource returns a new bitrise_app_finish resource.
+func NewAppFinishResource() resource.Resource {
+	return &AppFinishResource{}
 }
 
-func (r *AppFinishResource) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
+// Metadata returns the resource type name.
+func (r *AppFinishResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_app_finish"
 }
 
-func (r *AppFinishResource) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
+// Schema returns the resource schema.
+func (r *AppFinishResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		MarkdownDescription: "Bitrise App Finish resource",
 		Attributes: map[string]schema.Attribute{
@@ -90,284 +94,116 @@ func (r *AppFinishResource) Schema(ctx context.Context, req resource.SchemaReque
 	}
 }
 
-func (r *AppFinishResource) Configure(ctx context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
-	if req.ProviderData == nil {
-		tflog.Debug(ctx, "MODULEDEBUG: Provider data is missing")
-		return
-	}
-	clientCreator, ok := req.ProviderData.(func(endpoint, token string) *http.Client)
-
-	if !ok {
-		resp.Diagnostics.AddError(
-			"Unexpected Resource Configure Type",
-			fmt.Sprintf("Expected *http.Client, got: %T. Please report this issue to the provider developers.", req.ProviderData),
-		)
-		return
-	}
-
-	r.clientCreator = clientCreator
-	tflog.Debug(ctx, "MODULEDEBUG: Provider configuration successful")
-}
-
+// Create finishes the app setup.
 func (r *AppFinishResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
-	// Initialize data to store API response
 	var data AppFinishResourceModel
-
-	// Populate data from Terraform plan
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
-
-	// Check for errors in diagnostics and return if found
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	tflog.Debug(ctx, "MODULEDEBUG: Starting AppFinishResource Create")
-
-	// Create an HTTP client using the client creator from the provider
-	client := r.clientCreator(r.endpoint, r.token)
-
-	// Construct the URL for creating the request
-	appSlug := data.AppSlug
-	completeURL := fmt.Sprintf("%s/v0.1/apps/%s/finish", r.endpoint, appSlug)
-
-	// Construct the payload data using the provided variables
-	payload := PayloadFinish{
-		ProjectType:      data.ProjectType,
-		StackID:          data.StackID,
-		Config:           data.Config,
-		Mode:             data.Mode,
-		Envs:             data.Envs,
-		OrganizationSlug: data.OrganizationSlug,
-	}
-
-	// Marshal the payload struct into a JSON string
-	payloadJSON, err := json.Marshal(payload)
+	err := r.finish(ctx, data)
 	if err != nil {
-		tflog.Error(ctx, "Error marshaling JSON payload", map[string]interface{}{"error": err.Error()})
-		handleRequestError(err, resp)
+		// Pre-existing behaviour: only rejected statuses are reported.
+		var callErr *bitriseapi.CallError
+		var statusErr *bitriseapi.StatusError
+		if !errors.As(err, &callErr) && errors.As(err, &statusErr) {
+			resp.Diagnostics.AddError("MODULEDEBUG: API Request Error", fmt.Sprintf("Request did not succeed: %s", statusErr.Status()))
+		}
 		return
 	}
 
-	tflog.Debug(ctx, "MODULEDEBUG: Request payload", map[string]interface{}{"payload_json": string(payloadJSON)})
-
-	// Create an HTTP request
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", completeURL, strings.NewReader(string(payloadJSON)))
-	if err != nil {
-		tflog.Error(ctx, "Error creating HTTP request", map[string]interface{}{"error": err.Error()})
-		handleRequestError(err, resp)
-		return
-	}
-	// Set headers
-	httpReq.Header.Set("Content-Type", "application/json")
-
-	// Dump the HTTP request details
-	dump, _ := httputil.DumpRequest(httpReq, true)
-	tflog.Debug(ctx, "MODULEDEBUG: HTTP Request", map[string]interface{}{"request": string(dump)})
-
-	// Send the HTTP request
-	httpResp, err := client.Do(httpReq)
-	if err != nil {
-		tflog.Error(ctx, "Error sending HTTP request", map[string]interface{}{"error": err.Error()})
-		handleRequestError(err, resp)
-		return
-	}
-	defer httpResp.Body.Close()
-
-	// Read the response body
-	responseBody, err := io.ReadAll(httpResp.Body)
-	if err != nil {
-		tflog.Error(ctx, "Error reading response body", map[string]interface{}{"error": err.Error()})
-		handleRequestError(err, resp)
-		return
-	}
-	tflog.Debug(ctx, "MODULEDEBUG: Response body", map[string]interface{}{"body": string(responseBody)})
-
-	// Debugging: Print response status and headers
-	printResponseInfo(httpResp)
-
-	if httpResp.StatusCode != http.StatusOK {
-		tflog.Error(ctx, "MODULEDEBUG: Request did not succeed", map[string]interface{}{
-			"status": httpResp.Status,
-			"headers": httpResp.Header,
-		})
-		resp.Diagnostics.AddError("MODULEDEBUG: API Request Error", fmt.Sprintf("Request did not succeed: %s", httpResp.Status))
-		return
-	}
-
-	tflog.Info(ctx, "MODULEDEBUG: App registration completed successfully")
-
-	// Update resource state with populated data
-	resp.State.Set(ctx, &data)
+	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
+// Read keeps the resource in state while the app exists.
 func (r *AppFinishResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	var data AppFinishResourceModel
-
-	// Read Terraform prior state data into the model
 	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
-
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	tflog.Debug(ctx, "MODULEDEBUG: Starting AppFinishResource Read")
-
-	// Create an HTTP client using the client creator from the provider
-	client := r.clientCreator(r.endpoint, r.token)
-
-	// Get the app slug from state
-	appSlug := data.AppSlug
-	if appSlug == "" {
-		tflog.Warn(ctx, "AppSlug is empty, skipping Read")
-		resp.State.Set(ctx, &data)
+	if !readAppExists(ctx, r.client, data.AppSlug, resp) {
 		return
 	}
 
-	// Construct the URL to get the app details
-	completeURL := fmt.Sprintf("%s/v0.1/apps/%s", r.endpoint, appSlug)
-
-	tflog.Debug(ctx, "MODULEDEBUG: Fetching app details for Finish resource", map[string]interface{}{"url": completeURL})
-
-	// Create an HTTP request
-	httpReq, err := http.NewRequestWithContext(ctx, "GET", completeURL, nil)
-	if err != nil {
-		tflog.Error(ctx, "Error creating HTTP request", map[string]interface{}{"error": err.Error()})
-		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to create request: %s", err))
-		return
-	}
-
-	// Send the HTTP request
-	httpResp, err := client.Do(httpReq)
-	if err != nil {
-		tflog.Error(ctx, "Error sending HTTP request", map[string]interface{}{"error": err.Error()})
-		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read app: %s", err))
-		return
-	}
-	defer httpResp.Body.Close()
-
-	// If the app was deleted (404), remove it from state
-	if httpResp.StatusCode == http.StatusNotFound {
-		tflog.Info(ctx, "App not found, removing Finish resource from state", map[string]interface{}{"app_slug": appSlug})
-		resp.State.RemoveResource(ctx)
-		return
-	}
-
-	if httpResp.StatusCode != http.StatusOK {
-		responseBody, _ := io.ReadAll(httpResp.Body)
-		tflog.Error(ctx, "Request did not succeed", map[string]interface{}{
-			"status": httpResp.Status,
-			"body":   string(responseBody),
-		})
-		resp.Diagnostics.AddError("API Error", fmt.Sprintf("Unable to read app, got status: %s", httpResp.Status))
-		return
-	}
-
-	tflog.Debug(ctx, "MODULEDEBUG: App still exists, keeping Finish resource in state")
-
-	// Save updated data into Terraform state
-	resp.State.Set(ctx, &data)
+	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
+// Update finishes the app setup again with the planned settings.
 func (r *AppFinishResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
 	var data AppFinishResourceModel
-
-	// Read Terraform plan data into the model
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
-
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	tflog.Debug(ctx, "MODULEDEBUG: Starting AppFinishResource Update")
-
-	// Create an HTTP client using the client creator from the provider
-	client := r.clientCreator(r.endpoint, r.token)
-
-	// Construct the URL for updating the request
-	appSlug := data.AppSlug
-	completeURL := fmt.Sprintf("%s/v0.1/apps/%s/finish", r.endpoint, appSlug)
-
-	// Construct the payload data using the provided variables
-	payload := PayloadFinish{
-		ProjectType:      data.ProjectType,
-		StackID:          data.StackID,
-		Config:           data.Config,
-		Mode:             data.Mode,
-		Envs:             data.Envs,
-		OrganizationSlug: data.OrganizationSlug,
-	}
-
-	// Marshal the payload struct into a JSON string
-	payloadJSON, err := json.Marshal(payload)
-	if err != nil {
-		tflog.Error(ctx, "Error marshaling JSON payload", map[string]interface{}{"error": err.Error()})
-		resp.Diagnostics.AddError("JSON Error", fmt.Sprintf("Unable to marshal payload: %s", err))
+	if err := r.finish(ctx, data); err != nil {
+		appCallDiags("Unable to create request: %s", "Unable to update app finish: %s").add(&resp.Diagnostics, err)
 		return
 	}
 
-	tflog.Debug(ctx, "MODULEDEBUG: Update request payload", map[string]interface{}{"payload_json": string(payloadJSON)})
-
-	// Create an HTTP request
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", completeURL, strings.NewReader(string(payloadJSON)))
-	if err != nil {
-		tflog.Error(ctx, "Error creating HTTP request", map[string]interface{}{"error": err.Error()})
-		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to create request: %s", err))
-		return
-	}
-
-	// Dump the HTTP request details
-	dump, _ := httputil.DumpRequest(httpReq, true)
-	tflog.Debug(ctx, "MODULEDEBUG: HTTP Request", map[string]interface{}{"request": string(dump)})
-
-	// Send the HTTP request
-	httpResp, err := client.Do(httpReq)
-	if err != nil {
-		tflog.Error(ctx, "Error sending HTTP request", map[string]interface{}{"error": err.Error()})
-		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to update app finish: %s", err))
-		return
-	}
-	defer httpResp.Body.Close()
-
-	// Read the response body
-	responseBody, err := io.ReadAll(httpResp.Body)
-	if err != nil {
-		tflog.Error(ctx, "Error reading response body", map[string]interface{}{"error": err.Error()})
-		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read response: %s", err))
-		return
-	}
-
-	tflog.Debug(ctx, "MODULEDEBUG: Response Body", map[string]interface{}{"body": string(responseBody)})
-
-	// Check response status
-	if httpResp.StatusCode != http.StatusOK {
-		tflog.Error(ctx, "Request did not succeed", map[string]interface{}{
-			"status": httpResp.Status,
-			"body":   string(responseBody),
-		})
-		resp.Diagnostics.AddError("API Request Error", fmt.Sprintf("Request did not succeed: %s - %s", httpResp.Status, string(responseBody)))
-		return
-	}
-
-	tflog.Info(ctx, "App finish configuration updated successfully")
-
-	// Update resource state with populated data
-	resp.State.Set(ctx, &data)
+	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
+// Delete only removes the resource from state; the API has nothing to undo.
 func (r *AppFinishResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
 	var data AppFinishResourceModel
-
 	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
-
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	tflog.Debug(ctx, "MODULEDEBUG: Finish resource deleted from state (no API call needed)")
-	// The finish endpoint doesn't require cleanup, just remove from state
 	resp.State.RemoveResource(ctx)
 }
 
+// ImportState imports the resource by app slug.
 func (r *AppFinishResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 	resource.ImportStatePassthroughID(ctx, path.Root("app_slug"), req, resp)
+}
+
+func (r *AppFinishResource) finish(ctx context.Context, data AppFinishResourceModel) error {
+	return r.client.Do(ctx, bitriseapi.Request{
+		Op:     "finish app " + data.AppSlug,
+		Method: http.MethodPost,
+		Path:   bitriseapi.AppFinishPath(data.AppSlug),
+		Body: PayloadFinish{
+			ProjectType:      data.ProjectType,
+			StackID:          data.StackID,
+			Config:           data.Config,
+			Mode:             data.Mode,
+			Envs:             data.Envs,
+			OrganizationSlug: data.OrganizationSlug,
+		},
+	}, &bitriseapi.RawResponse{})
+}
+
+// readAppExists checks that the app behind a dependent resource still exists.
+// It removes the resource from state when the app is gone and reports whether
+// the caller should keep the resource.
+func readAppExists(ctx context.Context, client apiCaller, appSlug string, resp *resource.ReadResponse) bool {
+	if appSlug == "" {
+		tflog.Warn(ctx, "AppSlug is empty, skipping Read")
+		return true
+	}
+
+	err := client.Do(ctx, bitriseapi.Request{
+		Op:     "read app " + appSlug,
+		Method: http.MethodGet,
+		Path:   bitriseapi.AppPath(appSlug),
+	}, nil)
+	var statusErr *bitriseapi.StatusError
+	switch {
+	case err == nil:
+		return true
+	case errors.Is(err, bitriseapi.ErrNotFound):
+		tflog.Info(ctx, "App not found, removing from state", map[string]interface{}{"app_slug": appSlug})
+		resp.State.RemoveResource(ctx)
+	case errors.As(err, &statusErr):
+		resp.Diagnostics.AddError("API Error", fmt.Sprintf("Unable to read app, got status: %s", statusErr.Status()))
+	default:
+		appCallDiags("Unable to create request: %s", "Unable to read app: %s").add(&resp.Diagnostics, err)
+	}
+	return false
 }
