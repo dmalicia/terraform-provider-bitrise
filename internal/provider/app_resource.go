@@ -138,6 +138,9 @@ func (r *AppResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *
 			"app_slug": schema.StringAttribute{
 				MarkdownDescription: "App Slug",
 				Computed:            true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
 			},
 		},
 	}

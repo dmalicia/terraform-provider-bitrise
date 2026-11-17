@@ -7,6 +7,7 @@ FEATURES:
 BUG FIXES:
 
 * `bitrise_app`, `bitrise_app_finish`, `bitrise_app_ssh`: Report API and network errors on create instead of failing with a generic "Missing Resource State After Create" error
+* `bitrise_app`: Send updates to the app's own endpoint; the slug was unknown during update, so every in-place change failed with a 404
 
 ## 0.1.0 (Unreleased)
 
