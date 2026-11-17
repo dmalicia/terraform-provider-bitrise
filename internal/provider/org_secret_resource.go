@@ -66,13 +66,13 @@ type orgSecretUpdateRequest struct {
 }
 
 type orgSecretResponse struct {
-	ID                       string `json:"id"`
-	Name                     string `json:"name"`
-	Value                    string `json:"value,omitempty"`
-	IsProtected              bool   `json:"is_protected"`
-	IsExposedForPullRequests bool   `json:"is_exposed_for_pull_requests"`
-	ExpandInStepInputs       bool   `json:"expand_in_step_inputs"`
-	Scope                    string `json:"scope"`
+	ID                       string  `json:"id"`
+	Name                     string  `json:"name"`
+	Value                    *string `json:"value"` // nil when omitted (protected); "" is a real value
+	IsProtected              bool    `json:"is_protected"`
+	IsExposedForPullRequests bool    `json:"is_exposed_for_pull_requests"`
+	ExpandInStepInputs       bool    `json:"expand_in_step_inputs"`
+	Scope                    string  `json:"scope"`
 }
 
 func (r *OrgSecretResource) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -277,8 +277,8 @@ func (r *OrgSecretResource) Read(ctx context.Context, req resource.ReadRequest, 
 	}
 
 	// Protected values are never returned, so drift on them cannot be detected.
-	if !secretResp.IsProtected && secretResp.Value != "" {
-		data.Value = types.StringValue(secretResp.Value)
+	if !secretResp.IsProtected && secretResp.Value != nil {
+		data.Value = types.StringValue(*secretResp.Value)
 	}
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
