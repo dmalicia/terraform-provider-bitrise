@@ -27,13 +27,13 @@ type AppFinishResource struct {
 
 // AppFinishResourceModel describes the bitrise_app_finish resource data model.
 type AppFinishResourceModel struct {
-	AppSlug          string            `tfsdk:"app_slug"`
-	ProjectType      string            `tfsdk:"project_type"`
-	StackID          string            `tfsdk:"stack_id"`
-	Config           string            `tfsdk:"config"`
-	Mode             string            `tfsdk:"mode"`
+	AppSlug          types.String      `tfsdk:"app_slug"`
+	ProjectType      types.String      `tfsdk:"project_type"`
+	StackID          types.String      `tfsdk:"stack_id"`
+	Config           types.String      `tfsdk:"config"`
+	Mode             types.String      `tfsdk:"mode"`
 	Envs             map[string]string `tfsdk:"envs"`
-	OrganizationSlug string            `tfsdk:"organization_slug"`
+	OrganizationSlug types.String      `tfsdk:"organization_slug"`
 }
 
 // PayloadFinish is the request body of the finish endpoint.
@@ -118,7 +118,7 @@ func (r *AppFinishResource) Read(ctx context.Context, req resource.ReadRequest, 
 		return
 	}
 
-	if !readAppExists(ctx, r.client, data.AppSlug, resp) {
+	if !readAppExists(ctx, r.client, data.AppSlug.ValueString(), resp) {
 		return
 	}
 
@@ -158,17 +158,18 @@ func (r *AppFinishResource) ImportState(ctx context.Context, req resource.Import
 }
 
 func (r *AppFinishResource) finish(ctx context.Context, data AppFinishResourceModel) error {
+	appSlug := data.AppSlug.ValueString()
 	return r.client.Do(ctx, bitriseapi.Request{
-		Op:     "finish app " + data.AppSlug,
+		Op:     "finish app " + appSlug,
 		Method: http.MethodPost,
-		Path:   bitriseapi.AppFinishPath(data.AppSlug),
+		Path:   bitriseapi.AppFinishPath(appSlug),
 		Body: PayloadFinish{
-			ProjectType:      data.ProjectType,
-			StackID:          data.StackID,
-			Config:           data.Config,
-			Mode:             data.Mode,
+			ProjectType:      data.ProjectType.ValueString(),
+			StackID:          data.StackID.ValueString(),
+			Config:           data.Config.ValueString(),
+			Mode:             data.Mode.ValueString(),
 			Envs:             data.Envs,
-			OrganizationSlug: data.OrganizationSlug,
+			OrganizationSlug: data.OrganizationSlug.ValueString(),
 		},
 	}, &bitriseapi.RawResponse{})
 }
