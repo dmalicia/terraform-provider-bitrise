@@ -111,6 +111,9 @@ func (p *BitriseProvider) Resources(ctx context.Context) []func() resource.Resou
 		func() resource.Resource {
 			return NewAppRolesResource(p.clientCreator, p.endpoint, p.token) // Roles resource
 		},
+		func() resource.Resource {
+			return NewOrgSecretResource(p.clientCreator, p.endpoint, p.token)
+		},
 	}
 }
 

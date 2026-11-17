@@ -1,3 +1,9 @@
+## Unreleased
+
+FEATURES:
+
+* **New Resource:** `bitrise_org_secret` - Manage workspace (organization) secrets shared by all apps in a Bitrise workspace
+
 ## 0.1.0 (Unreleased)
 
 FEATURES:
