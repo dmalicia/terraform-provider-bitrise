@@ -2,7 +2,6 @@ package provider
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -170,12 +169,7 @@ func (r *AppResource) Create(ctx context.Context, req resource.CreateRequest, re
 		},
 	}, &created)
 	if err != nil {
-		// Pre-existing behaviour: only rejections with a JSON body are reported.
-		var callErr *bitriseapi.CallError
-		var statusErr *bitriseapi.StatusError
-		if !errors.As(err, &callErr) && errors.As(err, &statusErr) && json.Unmarshal([]byte(statusErr.Body), &created) == nil {
-			resp.Diagnostics.AddError("API Request Error", fmt.Sprintf("Request did not succeed: %s", statusErr.Status()))
-		}
+		appCallDiags("Unable to create request: %s", "Unable to register app: %s").add(&resp.Diagnostics, err)
 		return
 	}
 

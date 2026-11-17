@@ -102,14 +102,8 @@ func (r *AppFinishResource) Create(ctx context.Context, req resource.CreateReque
 		return
 	}
 
-	err := r.finish(ctx, data)
-	if err != nil {
-		// Pre-existing behaviour: only rejected statuses are reported.
-		var callErr *bitriseapi.CallError
-		var statusErr *bitriseapi.StatusError
-		if !errors.As(err, &callErr) && errors.As(err, &statusErr) {
-			resp.Diagnostics.AddError("MODULEDEBUG: API Request Error", fmt.Sprintf("Request did not succeed: %s", statusErr.Status()))
-		}
+	if err := r.finish(ctx, data); err != nil {
+		appCallDiags("Unable to create request: %s", "Unable to finish app setup: %s").add(&resp.Diagnostics, err)
 		return
 	}
 
