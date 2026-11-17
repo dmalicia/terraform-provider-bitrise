@@ -2,9 +2,8 @@ package provider
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 
@@ -16,35 +15,37 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
+
+	"terraform-provider-bitrise/internal/bitriseapi"
 )
 
-var _ resource.Resource = &AppSecretsResource{}
-var _ resource.ResourceWithImportState = &AppSecretsResource{}
+var (
+	_ resource.ResourceWithConfigure   = &AppSecretsResource{}
+	_ resource.ResourceWithImportState = &AppSecretsResource{}
+)
 
-func NewAppSecretsResource(clientCreator func(endpoint, token string) *http.Client, endpoint, token string) *AppSecretsResource {
-	return &AppSecretsResource{
-		clientCreator: clientCreator,
-		endpoint:      endpoint,
-		token:         token,
-	}
+// NewAppSecretsResource returns a new bitrise_app_secret resource.
+func NewAppSecretsResource() resource.Resource {
+	return &AppSecretsResource{}
 }
 
+// AppSecretsResource manages a secret of a Bitrise app.
 type AppSecretsResource struct {
-	clientCreator func(endpoint, token string) *http.Client
-	endpoint      string
-	token         string
+	resourceWithClient
 }
 
+// AppSecretsResourceModel describes the app secret resource data model.
 type AppSecretsResourceModel struct {
-	AppSlug                      types.String `tfsdk:"app_slug"`
-	Name                         types.String `tfsdk:"name"`
-	Value                        types.String `tfsdk:"value"`
-	IsProtected                  types.Bool   `tfsdk:"is_protected"`
-	IsExposedForPullRequests     types.Bool   `tfsdk:"is_exposed_for_pull_requests"`
-	ExpandInStepInputs           types.Bool   `tfsdk:"expand_in_step_inputs"`
-	ID                           types.String `tfsdk:"id"`
+	AppSlug                  types.String `tfsdk:"app_slug"`
+	Name                     types.String `tfsdk:"name"`
+	Value                    types.String `tfsdk:"value"`
+	IsProtected              types.Bool   `tfsdk:"is_protected"`
+	IsExposedForPullRequests types.Bool   `tfsdk:"is_exposed_for_pull_requests"`
+	ExpandInStepInputs       types.Bool   `tfsdk:"expand_in_step_inputs"`
+	ID                       types.String `tfsdk:"id"`
 }
 
+// SecretCreateRequest is the request body that creates an app secret.
 type SecretCreateRequest struct {
 	Name                     string `json:"name"`
 	Value                    string `json:"value"`
@@ -53,6 +54,7 @@ type SecretCreateRequest struct {
 	ExpandInStepInputs       bool   `json:"expand_in_step_inputs,omitempty"`
 }
 
+// SecretUpdateRequest is the request body that updates an app secret.
 type SecretUpdateRequest struct {
 	Value                    string `json:"value,omitempty"`
 	IsProtected              *bool  `json:"is_protected,omitempty"`
@@ -60,6 +62,7 @@ type SecretUpdateRequest struct {
 	ExpandInStepInputs       *bool  `json:"expand_in_step_inputs,omitempty"`
 }
 
+// SecretResponse is the API representation of an app secret.
 type SecretResponse struct {
 	Name                     string `json:"name"`
 	Value                    string `json:"value,omitempty"`
@@ -69,11 +72,13 @@ type SecretResponse struct {
 	ID                       string `json:"id"`
 }
 
-func (r *AppSecretsResource) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
+// Metadata returns the resource type name.
+func (r *AppSecretsResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_app_secret"
 }
 
-func (r *AppSecretsResource) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
+// Schema returns the resource schema.
+func (r *AppSecretsResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		MarkdownDescription: "Manages secrets for a Bitrise application. Secrets are environment variables that are securely stored and can be used in your build workflows.",
 		Attributes: map[string]schema.Attribute{
@@ -125,23 +130,7 @@ func (r *AppSecretsResource) Schema(ctx context.Context, req resource.SchemaRequ
 	}
 }
 
-func (r *AppSecretsResource) Configure(ctx context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
-	if req.ProviderData == nil {
-		return
-	}
-
-	clientCreator, ok := req.ProviderData.(func(endpoint, token string) *http.Client)
-	if !ok {
-		resp.Diagnostics.AddError(
-			"Unexpected Resource Configure Type",
-			fmt.Sprintf("Expected func(endpoint, token string) *http.Client, got: %T", req.ProviderData),
-		)
-		return
-	}
-
-	r.clientCreator = clientCreator
-}
-
+// Create creates the secret.
 func (r *AppSecretsResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var data AppSecretsResourceModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
@@ -149,80 +138,32 @@ func (r *AppSecretsResource) Create(ctx context.Context, req resource.CreateRequ
 		return
 	}
 
-	tflog.Debug(ctx, "Creating Bitrise app secret", map[string]interface{}{
-		"app_slug": data.AppSlug.ValueString(),
-		"name":     data.Name.ValueString(),
-	})
-
-	client := r.clientCreator(r.endpoint, r.token)
-	url := fmt.Sprintf("%s/v0.1/apps/%s/secrets", r.endpoint, data.AppSlug.ValueString())
-
-	secretReq := SecretCreateRequest{
-		Name:                     data.Name.ValueString(),
-		Value:                    data.Value.ValueString(),
-		IsProtected:              data.IsProtected.ValueBool(),
-		IsExposedForPullRequests: data.IsExposedForPullRequests.ValueBool(),
-		ExpandInStepInputs:       data.ExpandInStepInputs.ValueBool(),
-	}
-
-	payloadJSON, err := json.Marshal(secretReq)
-	if err != nil {
-		resp.Diagnostics.AddError("Error marshaling request", err.Error())
-		return
-	}
-
-	tflog.Debug(ctx, "Sending POST request to create secret", map[string]interface{}{
-		"url": url,
-	})
-
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, strings.NewReader(string(payloadJSON)))
-	if err != nil {
-		resp.Diagnostics.AddError("Error creating HTTP request", err.Error())
-		return
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-
-	httpResp, err := client.Do(httpReq)
-	if err != nil {
-		resp.Diagnostics.AddError("Error sending HTTP request", err.Error())
-		return
-	}
-	defer httpResp.Body.Close()
-
-	responseBody, err := io.ReadAll(httpResp.Body)
-	if err != nil {
-		resp.Diagnostics.AddError("Error reading response body", err.Error())
-		return
-	}
-
-	if httpResp.StatusCode != http.StatusCreated {
-		tflog.Error(ctx, "Failed to create secret", map[string]interface{}{
-			"status": httpResp.Status,
-			"body":   string(responseBody),
-		})
-		resp.Diagnostics.AddError(
-			"API Error",
-			fmt.Sprintf("Failed to create secret: %s - %s", httpResp.Status, string(responseBody)),
-		)
-		return
-	}
-
+	appSlug := data.AppSlug.ValueString()
+	name := data.Name.ValueString()
 	var secretResp SecretResponse
-	if err := json.Unmarshal(responseBody, &secretResp); err != nil {
-		resp.Diagnostics.AddError("Error parsing response", err.Error())
+	err := r.client.Do(ctx, bitriseapi.Request{
+		Op:     fmt.Sprintf("create secret %s of app %s", name, appSlug),
+		Method: http.MethodPost,
+		Path:   bitriseapi.AppSecretsPath(appSlug),
+		Body: SecretCreateRequest{
+			Name:                     name,
+			Value:                    data.Value.ValueString(),
+			IsProtected:              data.IsProtected.ValueBool(),
+			IsExposedForPullRequests: data.IsExposedForPullRequests.ValueBool(),
+			ExpandInStepInputs:       data.ExpandInStepInputs.ValueBool(),
+		},
+		Accept: []int{http.StatusCreated},
+	}, &secretResp)
+	if err != nil {
+		standardCallDiags("Failed to create secret: %s - %s").add(&resp.Diagnostics, err)
 		return
 	}
 
-	// Set the ID to a combination of app_slug and secret name for import/identification
-	data.ID = types.StringValue(fmt.Sprintf("%s/%s", data.AppSlug.ValueString(), data.Name.ValueString()))
-
-	tflog.Info(ctx, "Successfully created Bitrise app secret", map[string]interface{}{
-		"id": data.ID.ValueString(),
-	})
-
+	data.ID = types.StringValue(fmt.Sprintf("%s/%s", appSlug, name))
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
+// Read refreshes the secret settings; the value is only returned for unprotected secrets.
 func (r *AppSecretsResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	var data AppSecretsResourceModel
 	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
@@ -230,74 +171,37 @@ func (r *AppSecretsResource) Read(ctx context.Context, req resource.ReadRequest,
 		return
 	}
 
-	tflog.Debug(ctx, "Reading Bitrise app secret", map[string]interface{}{
-		"app_slug": data.AppSlug.ValueString(),
-		"name":     data.Name.ValueString(),
-	})
-
-	client := r.clientCreator(r.endpoint, r.token)
-	url := fmt.Sprintf("%s/v0.1/apps/%s/secrets/%s", r.endpoint, data.AppSlug.ValueString(), data.Name.ValueString())
-
-	httpReq, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		resp.Diagnostics.AddError("Error creating HTTP request", err.Error())
-		return
-	}
-
-	httpResp, err := client.Do(httpReq)
-	if err != nil {
-		resp.Diagnostics.AddError("Error sending HTTP request", err.Error())
-		return
-	}
-	defer httpResp.Body.Close()
-
-	if httpResp.StatusCode == http.StatusNotFound {
+	appSlug := data.AppSlug.ValueString()
+	name := data.Name.ValueString()
+	var secretResp SecretResponse
+	err := r.client.Do(ctx, bitriseapi.Request{
+		Op:     fmt.Sprintf("read secret %s of app %s", name, appSlug),
+		Method: http.MethodGet,
+		Path:   bitriseapi.AppSecretPath(appSlug, name),
+	}, &secretResp)
+	if errors.Is(err, bitriseapi.ErrNotFound) {
 		tflog.Info(ctx, "Secret not found, removing from state", map[string]interface{}{
-			"app_slug": data.AppSlug.ValueString(),
-			"name":     data.Name.ValueString(),
+			"app_slug": appSlug,
+			"name":     name,
 		})
 		resp.State.RemoveResource(ctx)
 		return
 	}
-
-	responseBody, err := io.ReadAll(httpResp.Body)
 	if err != nil {
-		resp.Diagnostics.AddError("Error reading response body", err.Error())
+		standardCallDiags("Failed to read secret: %s - %s").add(&resp.Diagnostics, err)
 		return
 	}
 
-	if httpResp.StatusCode != http.StatusOK {
-		tflog.Error(ctx, "Failed to read secret", map[string]interface{}{
-			"status": httpResp.Status,
-			"body":   string(responseBody),
-		})
-		resp.Diagnostics.AddError(
-			"API Error",
-			fmt.Sprintf("Failed to read secret: %s - %s", httpResp.Status, string(responseBody)),
-		)
-		return
-	}
-
-	var secretResp SecretResponse
-	if err := json.Unmarshal(responseBody, &secretResp); err != nil {
-		resp.Diagnostics.AddError("Error parsing response", err.Error())
-		return
-	}
-
-	// Update state with values from API
-	// Note: If the secret is protected, the value won't be returned, so we keep the current state value
 	data.IsProtected = types.BoolValue(secretResp.IsProtected)
 	data.IsExposedForPullRequests = types.BoolValue(secretResp.IsExposedForPullRequests)
 	data.ExpandInStepInputs = types.BoolValue(secretResp.ExpandInStepInputs)
-	
-	// Only update value if it's not protected and returned by API
 	if !secretResp.IsProtected && secretResp.Value != "" {
 		data.Value = types.StringValue(secretResp.Value)
 	}
-
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
+// Update updates the secret value and settings.
 func (r *AppSecretsResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
 	var data AppSecretsResourceModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
@@ -305,72 +209,31 @@ func (r *AppSecretsResource) Update(ctx context.Context, req resource.UpdateRequ
 		return
 	}
 
-	tflog.Debug(ctx, "Updating Bitrise app secret", map[string]interface{}{
-		"app_slug": data.AppSlug.ValueString(),
-		"name":     data.Name.ValueString(),
-	})
-
-	client := r.clientCreator(r.endpoint, r.token)
-	url := fmt.Sprintf("%s/v0.1/apps/%s/secrets/%s", r.endpoint, data.AppSlug.ValueString(), data.Name.ValueString())
-
-	// Build update request with only the fields that should be updated
+	appSlug := data.AppSlug.ValueString()
+	name := data.Name.ValueString()
 	isProtected := data.IsProtected.ValueBool()
 	isExposed := data.IsExposedForPullRequests.ValueBool()
 	expandInputs := data.ExpandInStepInputs.ValueBool()
-
-	secretReq := SecretUpdateRequest{
-		Value:                    data.Value.ValueString(),
-		IsProtected:              &isProtected,
-		IsExposedForPullRequests: &isExposed,
-		ExpandInStepInputs:       &expandInputs,
-	}
-
-	payloadJSON, err := json.Marshal(secretReq)
+	err := r.client.Do(ctx, bitriseapi.Request{
+		Op:     fmt.Sprintf("update secret %s of app %s", name, appSlug),
+		Method: http.MethodPatch,
+		Path:   bitriseapi.AppSecretPath(appSlug, name),
+		Body: SecretUpdateRequest{
+			Value:                    data.Value.ValueString(),
+			IsProtected:              &isProtected,
+			IsExposedForPullRequests: &isExposed,
+			ExpandInStepInputs:       &expandInputs,
+		},
+	}, &bitriseapi.RawResponse{})
 	if err != nil {
-		resp.Diagnostics.AddError("Error marshaling request", err.Error())
+		standardCallDiags("Failed to update secret: %s - %s").add(&resp.Diagnostics, err)
 		return
 	}
 
-	tflog.Debug(ctx, "Sending PATCH request to update secret", map[string]interface{}{
-		"url": url,
-	})
-
-	httpReq, err := http.NewRequestWithContext(ctx, "PATCH", url, strings.NewReader(string(payloadJSON)))
-	if err != nil {
-		resp.Diagnostics.AddError("Error creating HTTP request", err.Error())
-		return
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-
-	httpResp, err := client.Do(httpReq)
-	if err != nil {
-		resp.Diagnostics.AddError("Error sending HTTP request", err.Error())
-		return
-	}
-	defer httpResp.Body.Close()
-
-	responseBody, err := io.ReadAll(httpResp.Body)
-	if err != nil {
-		resp.Diagnostics.AddError("Error reading response body", err.Error())
-		return
-	}
-
-	if httpResp.StatusCode != http.StatusOK {
-		tflog.Error(ctx, "Failed to update secret", map[string]interface{}{
-			"status": httpResp.Status,
-			"body":   string(responseBody),
-		})
-		resp.Diagnostics.AddError(
-			"API Error",
-			fmt.Sprintf("Failed to update secret: %s - %s", httpResp.Status, string(responseBody)),
-		)
-		return
-	}
-
-	tflog.Info(ctx, "Successfully updated Bitrise app secret")
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
+// Delete deletes the secret; a secret that is already gone is not an error.
 func (r *AppSecretsResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
 	var data AppSecretsResourceModel
 	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
@@ -378,51 +241,28 @@ func (r *AppSecretsResource) Delete(ctx context.Context, req resource.DeleteRequ
 		return
 	}
 
-	tflog.Debug(ctx, "Deleting Bitrise app secret", map[string]interface{}{
-		"app_slug": data.AppSlug.ValueString(),
-		"name":     data.Name.ValueString(),
-	})
-
-	client := r.clientCreator(r.endpoint, r.token)
-	url := fmt.Sprintf("%s/v0.1/apps/%s/secrets/%s", r.endpoint, data.AppSlug.ValueString(), data.Name.ValueString())
-
-	httpReq, err := http.NewRequestWithContext(ctx, "DELETE", url, nil)
-	if err != nil {
-		resp.Diagnostics.AddError("Error creating HTTP request", err.Error())
-		return
-	}
-
-	httpResp, err := client.Do(httpReq)
-	if err != nil {
-		resp.Diagnostics.AddError("Error sending HTTP request", err.Error())
-		return
-	}
-	defer httpResp.Body.Close()
-
-	// 404 means already deleted, which is fine
-	if httpResp.StatusCode == http.StatusNotFound {
+	appSlug := data.AppSlug.ValueString()
+	name := data.Name.ValueString()
+	err := r.client.Do(ctx, bitriseapi.Request{
+		Op:     fmt.Sprintf("delete secret %s of app %s", name, appSlug),
+		Method: http.MethodDelete,
+		Path:   bitriseapi.AppSecretPath(appSlug, name),
+		Accept: []int{http.StatusNoContent},
+	}, nil)
+	var statusErr *bitriseapi.StatusError
+	switch {
+	case err == nil:
+	case errors.Is(err, bitriseapi.ErrNotFound):
 		tflog.Info(ctx, "Secret already deleted")
-		return
+	case errors.As(err, &statusErr):
+		resp.Diagnostics.AddError("API Error", fmt.Sprintf("Failed to delete secret: %s - %s", statusErr.Status(), statusErr.Body))
+	default:
+		standardCallDiags("Failed to delete secret: %s - %s").add(&resp.Diagnostics, err)
 	}
-
-	if httpResp.StatusCode != http.StatusNoContent {
-		responseBody, _ := io.ReadAll(httpResp.Body)
-		tflog.Error(ctx, "Failed to delete secret", map[string]interface{}{
-			"status": httpResp.Status,
-			"body":   string(responseBody),
-		})
-		resp.Diagnostics.AddError(
-			"API Error",
-			fmt.Sprintf("Failed to delete secret: %s - %s", httpResp.Status, string(responseBody)),
-		)
-		return
-	}
-
-	tflog.Info(ctx, "Successfully deleted Bitrise app secret")
 }
 
+// ImportState imports the resource by "app_slug/secret_name".
 func (r *AppSecretsResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	// Import ID should be in the format: app_slug/secret_name
 	parts := strings.Split(req.ID, "/")
 	if len(parts) != 2 {
 		resp.Diagnostics.AddError(
@@ -435,7 +275,4 @@ func (r *AppSecretsResource) ImportState(ctx context.Context, req resource.Impor
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("app_slug"), parts[0])...)
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("name"), parts[1])...)
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("id"), req.ID)...)
-	
-	// Note: The value won't be imported, user needs to set it manually after import
-	// or if the secret is not protected, it will be fetched during the first read
 }
