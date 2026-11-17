@@ -18,6 +18,10 @@ BUG FIXES:
 * Time out API requests after 60 seconds instead of waiting indefinitely for an unresponsive API
 * Reject API responses larger than 1 MiB and truncate error response bodies in diagnostics to 4 KiB instead of reading them without limit
 
+NOTES:
+
+* Build with Go 1.26.11 (Go 1.24 is no longer supported) and update dependencies, including `golang.org/x/crypto`, `golang.org/x/net`, `golang.org/x/text`, `google.golang.org/grpc` and `github.com/cloudflare/circl`, to fix known vulnerabilities
+
 ## 2.1.0 (February 13, 2026)
 
 FEATURES:
