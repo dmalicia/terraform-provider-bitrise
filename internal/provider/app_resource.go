@@ -22,6 +22,9 @@ var (
 	_ resource.ResourceWithImportState = &AppResource{}
 )
 
+// appImportedKey marks private state written by ImportState until the first Read.
+const appImportedKey = "imported"
+
 // AppResource manages a Bitrise app registration.
 type AppResource struct {
 	resourceWithClient
@@ -248,7 +251,16 @@ func (r *AppResource) Read(ctx context.Context, req resource.ReadRequest, resp *
 	if app.Data.RepoURL != "" {
 		data.RepoURL = types.StringValue(app.Data.RepoURL)
 	}
-	data.IsPublic = types.BoolValue(app.Data.IsPublic)
+	imported, diags := req.Private.GetKey(ctx, appImportedKey)
+	resp.Diagnostics.Append(diags...)
+	// is_public is optional but not computed and an omitted value is sent as
+	// false, so keep it null unless imported, set or changed remotely.
+	if imported != nil || !data.IsPublic.IsNull() || app.Data.IsPublic {
+		data.IsPublic = types.BoolValue(app.Data.IsPublic)
+	}
+	if imported != nil {
+		resp.Diagnostics.Append(resp.Private.SetKey(ctx, appImportedKey, nil)...)
+	}
 	if app.Data.RepoOwner != "" {
 		data.GitOwner = types.StringValue(app.Data.RepoOwner)
 	}
@@ -294,6 +306,7 @@ func (r *AppResource) ImportState(ctx context.Context, req resource.ImportStateR
 	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
 	// Read and Update address the app by app_slug, so it must be set too.
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("app_slug"), req.ID)...)
+	resp.Diagnostics.Append(resp.Private.SetKey(ctx, appImportedKey, []byte("true"))...)
 }
 
 // appCallDiags returns the diagnostics shared by the app, app finish and app SSH resources.
