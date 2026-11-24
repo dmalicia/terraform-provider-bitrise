@@ -1,8 +1,8 @@
+// Package provider implements the Bitrise Terraform provider.
 package provider
 
 import (
 	"context"
-	"net/http"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
@@ -10,32 +10,31 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
+
+	"terraform-provider-bitrise/internal/bitriseapi"
 )
 
 var _ provider.Provider = &BitriseProvider{}
 
-type ClientProvider interface {
-	GetClient() (*http.Client, error)
-}
-
+// BitriseProvider is the Bitrise Terraform provider.
 type BitriseProvider struct {
-	version       string
-	endpoint      string
-	token         string
-	clientCreator func(endpoint, token string) *http.Client
+	version string
 }
 
+// BitriseProviderModel describes the provider configuration.
 type BitriseProviderModel struct {
 	Endpoint types.String `tfsdk:"endpoint"`
 	Token    types.String `tfsdk:"token"`
 }
 
-func (p *BitriseProvider) Metadata(ctx context.Context, req provider.MetadataRequest, resp *provider.MetadataResponse) {
+// Metadata returns the provider type name and version.
+func (p *BitriseProvider) Metadata(_ context.Context, _ provider.MetadataRequest, resp *provider.MetadataResponse) {
 	resp.TypeName = "bitrise"
 	resp.Version = p.version
 }
 
-func (p *BitriseProvider) Schema(ctx context.Context, req provider.SchemaRequest, resp *provider.SchemaResponse) {
+// Schema returns the provider configuration schema.
+func (p *BitriseProvider) Schema(_ context.Context, _ provider.SchemaRequest, resp *provider.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		Attributes: map[string]schema.Attribute{
 			"endpoint": schema.StringAttribute{
@@ -50,8 +49,7 @@ func (p *BitriseProvider) Schema(ctx context.Context, req provider.SchemaRequest
 	}
 }
 
-// ... (other code)
-
+// Configure creates the API client shared by all resources and data sources.
 func (p *BitriseProvider) Configure(ctx context.Context, req provider.ConfigureRequest, resp *provider.ConfigureResponse) {
 	var config BitriseProviderModel
 
@@ -61,92 +59,42 @@ func (p *BitriseProvider) Configure(ctx context.Context, req provider.ConfigureR
 		return
 	}
 
-	// Get the actual string values using ValueString()
 	endpoint := config.Endpoint.ValueString()
-	token := config.Token.ValueString()
 
-	// Store the endpoint as-is (with https:// if provided)
-	p.endpoint = endpoint
-	p.token = token
-
-	// Log configuration for debugging
 	tflog.Debug(ctx, "MODULEDEBUG: Configuring Bitrise provider", map[string]interface{}{
-		"endpoint": p.endpoint,
+		"endpoint": endpoint,
 	})
 
-	p.clientCreator = func(endpoint, token string) *http.Client {
-		return &http.Client{
-			Transport: &authenticatedTransport{
-				token:    token,
-				base:     http.DefaultTransport,
-				headers:  map[string]string{"Content-Type": "application/json"},
-				endpoint: endpoint,
-			},
-		}
-	}
-
-	resp.DataSourceData = p.clientCreator
-	resp.ResourceData = p.clientCreator
+	client := bitriseapi.New(endpoint, config.Token.ValueString())
+	resp.DataSourceData = client
+	resp.ResourceData = client
 
 	tflog.Info(ctx, "Bitrise provider configured successfully")
 }
 
-func (p *BitriseProvider) Resources(ctx context.Context) []func() resource.Resource {
+// Resources returns the resources the provider supports.
+func (p *BitriseProvider) Resources(_ context.Context) []func() resource.Resource {
 	return []func() resource.Resource{
-		func() resource.Resource {
-			return NewAppResource(p.clientCreator, p.endpoint, p.token)
-		},
-		func() resource.Resource {
-			return NewAppSSHResource(p.clientCreator, p.endpoint, p.token) // Return the custom resource type instance
-		},
-		func() resource.Resource {
-			return NewAppFinishResource(p.clientCreator, p.endpoint, p.token) // Return the custom resource type instance
-		},
-		func() resource.Resource {
-			return NewAppSecretsResource(p.clientCreator, p.endpoint, p.token) // Secrets resource
-		},
-		func() resource.Resource {
-			return NewAppBitriseYmlResource(p.clientCreator, p.endpoint, p.token) // Bitrise.yml resource
-		},
-		func() resource.Resource {
-			return NewAppRolesResource(p.clientCreator, p.endpoint, p.token) // Roles resource
-		},
-		func() resource.Resource {
-			return NewOrgSecretResource(p.clientCreator, p.endpoint, p.token)
-		},
+		NewAppResource,
+		NewAppSSHResource,
+		NewAppFinishResource,
+		NewAppSecretsResource,
+		NewAppBitriseYmlResource,
+		NewAppRolesResource,
+		NewOrgSecretResource,
 	}
 }
 
-type authenticatedTransport struct {
-	token    string
-	endpoint string
-	base     http.RoundTripper
-	headers  map[string]string
-}
-
-func (t *authenticatedTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	req.Header.Set("Authorization", t.token)
-	// Apply all headers from the headers map
-	for key, value := range t.headers {
-		req.Header.Set(key, value)
-	}
-	return t.base.RoundTrip(req)
-}
-
-func (p *BitriseProvider) DataSources(ctx context.Context) []func() datasource.DataSource {
+// DataSources returns the data sources the provider supports.
+func (p *BitriseProvider) DataSources(_ context.Context) []func() datasource.DataSource {
 	return []func() datasource.DataSource{
-		func() datasource.DataSource {
-			return NewAppRolesDataSource(p.clientCreator, p.endpoint, p.token)
-		},
-		func() datasource.DataSource {
-			return NewOrgGroupsDataSource(p.clientCreator, p.endpoint, p.token)
-		},
-		func() datasource.DataSource {
-			return NewAvailableStacksDataSource(p.clientCreator, p.endpoint, p.token)
-		},
+		NewAppRolesDataSource,
+		NewOrgGroupsDataSource,
+		NewAvailableStacksDataSource,
 	}
 }
 
+// New returns a factory for the provider at the given version.
 func New(version string) func() provider.Provider {
 	return func() provider.Provider {
 		return &BitriseProvider{

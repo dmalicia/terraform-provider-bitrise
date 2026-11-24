@@ -103,7 +103,13 @@ For the latest available stacks, refer to the [Bitrise stack documentation](http
 
 ## Import
 
-This resource cannot be imported because the configuration setup is a one-time operation that modifies the app's initial state.
+The finish configuration can be imported using the app slug:
+
+```shell
+terraform import bitrise_app_finish.example your-app-slug
+```
+
+**Note:** Only `app_slug` is recovered on import; the Bitrise API does not return the setup values. The other required attributes must be set in configuration, so the next `terraform apply` updates the resource in place and calls the finish endpoint again with those values.
 
 ## API Documentation
 

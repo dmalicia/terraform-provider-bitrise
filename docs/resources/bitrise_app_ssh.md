@@ -48,13 +48,19 @@ This resource does not export any additional attributes beyond the arguments.
 
 ## Security Considerations
 
-* **Private Key Storage**: The private SSH key is marked as sensitive and will not appear in Terraform logs or console output.
+* **Private Key Storage**: The private SSH key is marked as sensitive, so it is hidden from plan and console output, but it is still stored in plain text in the Terraform state. Use a remote backend with encryption at rest and restrict access to the state.
 * **Key Rotation**: To rotate SSH keys, you can update the `auth_ssh_private_key` and `auth_ssh_public_key` attributes. This will trigger an update of the SSH configuration.
 * **Provider Registration**: When `is_register_key_into_provider_service` is enabled, ensure your Bitrise account has the necessary permissions to register keys with your git provider.
 
 ## Import
 
-SSH key configurations cannot be imported because the private key value cannot be retrieved from the Bitrise API for security reasons.
+SSH key configurations can be imported using the app slug:
+
+```shell
+terraform import bitrise_app_ssh.example your-app-slug
+```
+
+**Note:** Only `app_slug` is recovered on import; the Bitrise API never returns SSH keys. Both keys must be set in configuration, so the next `terraform apply` updates the resource in place and registers them again.
 
 ## API Documentation
 
@@ -66,7 +72,7 @@ For more information, see the [Bitrise API documentation](https://api-docs.bitri
 
 ## Notes
 
-* The private SSH key is temporarily written to a local file during resource creation for processing. This file is managed securely but be aware of this behavior.
+* The provider sends the private SSH key to the Bitrise API from memory and creates no temporary key file. The key is still persisted in Terraform state (see Security Considerations).
 * You must have valid SSH key pairs. The public and private keys must match.
 * If `is_register_key_into_provider_service` is `true`, Bitrise must have access to your git provider to register the public key.
 * SSH keys are essential for private repositories and repositories that require authenticated access.
