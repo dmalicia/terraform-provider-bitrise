@@ -44,6 +44,7 @@ func (p *BitriseProvider) Schema(_ context.Context, _ provider.SchemaRequest, re
 			"token": schema.StringAttribute{
 				MarkdownDescription: "The API token for authenticating with the Bitrise API",
 				Optional:            true,
+				Sensitive:           true,
 			},
 		},
 	}

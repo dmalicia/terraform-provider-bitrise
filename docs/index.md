@@ -23,4 +23,5 @@ provider "bitrise" {
 
 ### Optional
 
-- `endpoint` (String) Example provider attribute
+- `endpoint` (String) The endpoint of the Bitrise API
+- `token` (String, Sensitive) The API token for authenticating with the Bitrise API

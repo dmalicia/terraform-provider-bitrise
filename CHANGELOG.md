@@ -14,6 +14,8 @@ BUG FIXES:
 * `data.bitrise_available_stacks`: Return `stack_keys` sorted instead of in random order
 * Time out API requests after 60 seconds instead of waiting indefinitely for an unresponsive API
 * Reject API responses larger than 1 MiB and truncate error response bodies in diagnostics to 4 KiB instead of reading them without limit
+* `bitrise_app_finish`: Mark `envs` as sensitive so env values are no longer printed in plan and apply output ([#18](https://github.com/dmalicia/terraform-provider-bitrise/issues/18))
+* Provider: Mark `token` as sensitive so the API token is redacted if it appears in output ([#18](https://github.com/dmalicia/terraform-provider-bitrise/issues/18))
 
 SECURITY NOTICE:
 
@@ -21,6 +23,7 @@ SECURITY NOTICE:
 
 NOTES:
 
+* `bitrise_app_finish`: Because `envs` is now sensitive, any `output` that references it must set `sensitive = true`, and it can no longer be used directly in `for_each`. Wrap it with `nonsensitive()` only where exposing the values is intended.
 * Build with Go 1.26.11 (Go 1.24 is no longer supported) and update dependencies, including `golang.org/x/crypto`, `golang.org/x/net`, `golang.org/x/text`, `google.golang.org/grpc` and `github.com/cloudflare/circl`, to fix known vulnerabilities
 
 ## 2.2.0 (November 24, 2026)
