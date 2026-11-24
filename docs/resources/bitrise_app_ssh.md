@@ -31,6 +31,14 @@ resource "bitrise_app_ssh" "generated" {
   auth_ssh_private_key  = tls_private_key.bitrise_ssh.private_key_pem
   auth_ssh_public_key   = tls_private_key.bitrise_ssh.public_key_openssh
 }
+
+# Write-only private key (Terraform 1.11+): the key is never stored in state or plan
+resource "bitrise_app_ssh" "write_only" {
+  app_slug                        = bitrise_app.my_app.app_slug
+  auth_ssh_private_key_wo         = var.ssh_private_key
+  auth_ssh_private_key_wo_version = 1
+  auth_ssh_public_key             = var.ssh_public_key
+}
 ```
 
 ## Argument Reference
@@ -38,7 +46,9 @@ resource "bitrise_app_ssh" "generated" {
 The following arguments are supported:
 
 * `app_slug` - (Required, ForceNew) The slug of the Bitrise app. Changing this forces a new resource to be created.
-* `auth_ssh_private_key` - (Required, Sensitive) The private SSH key for authentication. This key will be used to access the repository during builds.
+* `auth_ssh_private_key` - (Optional, Sensitive) The private SSH key for authentication. This key will be used to access the repository during builds. Stored in state. Exactly one of `auth_ssh_private_key` or `auth_ssh_private_key_wo` must be set.
+* `auth_ssh_private_key_wo` - (Optional, Sensitive, Write-only) The private SSH key, never stored in state or plan. Requires Terraform 1.11 or later; older versions report an error if it is set. Exactly one of `auth_ssh_private_key` or `auth_ssh_private_key_wo` must be set.
+* `auth_ssh_private_key_wo_version` - (Optional) Change this value to register a new `auth_ssh_private_key_wo`. Terraform cannot detect changes to write-only values, so a changed key is only sent when this value changes. Only valid with `auth_ssh_private_key_wo`.
 * `auth_ssh_public_key` - (Required) The public SSH key for authentication. This corresponds to the private key and may be registered with the git provider.
 * `is_register_key_into_provider_service` - (Optional) If `true`, Bitrise will automatically register the public key with your git provider service. Default: `false`.
 
@@ -48,8 +58,9 @@ This resource does not export any additional attributes beyond the arguments.
 
 ## Security Considerations
 
-* **Private Key Storage**: The private SSH key is marked as sensitive, so it is hidden from plan and console output, but it is still stored in plain text in the Terraform state. Use a remote backend with encryption at rest and restrict access to the state.
-* **Key Rotation**: To rotate SSH keys, you can update the `auth_ssh_private_key` and `auth_ssh_public_key` attributes. This will trigger an update of the SSH configuration.
+* **Private Key Storage**: `auth_ssh_private_key` is marked as sensitive, so it is hidden from plan and console output, but it is still stored in plain text in the Terraform state. Use a remote backend with encryption at rest and restrict access to the state. On Terraform 1.11 or later, use `auth_ssh_private_key_wo` instead to keep the key out of state.
+* **Key Rotation**: To rotate SSH keys, update `auth_ssh_private_key` and `auth_ssh_public_key`. With `auth_ssh_private_key_wo`, also increment `auth_ssh_private_key_wo_version`. Either triggers an update of the SSH configuration.
+* **Migrating to the write-only key**: Replace `auth_ssh_private_key` with `auth_ssh_private_key_wo` and set `auth_ssh_private_key_wo_version`. The next apply registers the key again and removes it from state.
 * **Provider Registration**: When `is_register_key_into_provider_service` is enabled, ensure your Bitrise account has the necessary permissions to register keys with your git provider.
 
 ## Import
@@ -60,7 +71,7 @@ SSH key configurations can be imported using the app slug:
 terraform import bitrise_app_ssh.example your-app-slug
 ```
 
-**Note:** Only `app_slug` is recovered on import; the Bitrise API never returns SSH keys. Both keys must be set in configuration, so the next `terraform apply` updates the resource in place and registers them again.
+**Note:** Only `app_slug` is recovered on import; the Bitrise API never returns SSH keys. The public key and one of the private key attributes must be set in configuration, so the next `terraform apply` updates the resource in place and registers them again.
 
 ## API Documentation
 
@@ -72,7 +83,7 @@ For more information, see the [Bitrise API documentation](https://api-docs.bitri
 
 ## Notes
 
-* The provider sends the private SSH key to the Bitrise API from memory and creates no temporary key file. The key is still persisted in Terraform state (see Security Considerations).
+* The provider sends the private SSH key to the Bitrise API from memory and creates no temporary key file. With `auth_ssh_private_key` the key is still persisted in Terraform state (see Security Considerations); with `auth_ssh_private_key_wo` it is not.
 * You must have valid SSH key pairs. The public and private keys must match.
 * If `is_register_key_into_provider_service` is `true`, Bitrise must have access to your git provider to register the public key.
 * SSH keys are essential for private repositories and repositories that require authenticated access.
