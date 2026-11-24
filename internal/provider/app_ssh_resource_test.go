@@ -1,10 +1,13 @@
 package provider
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"testing"
 
+	fwresource "github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -143,4 +146,13 @@ func TestAppSSHResource_ImportState_withAppSlug_importsResource(t *testing.T) {
 			},
 		},
 	})
+}
+
+func TestAppSSHResource_Schema_privateKeyIsSensitive(t *testing.T) {
+	var resp fwresource.SchemaResponse
+	NewAppSSHResource().Schema(context.Background(), fwresource.SchemaRequest{}, &resp)
+
+	attr, ok := resp.Schema.Attributes["auth_ssh_private_key"].(schema.StringAttribute)
+	require.True(t, ok, "auth_ssh_private_key must be a string attribute")
+	assert.True(t, attr.Sensitive, "the private key must be redacted from plan and apply output")
 }
