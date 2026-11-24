@@ -57,6 +57,7 @@ This provider is built for the Bitrise API, enabling infrastructure-as-code mana
 - **bitrise_app_secret**: Manages secrets (environment variables) for Bitrise applications - Full CRUD with protection options
 - **bitrise_app_bitrise_yml**: Manages Bitrise YAML configuration for applications
 - **bitrise_app_roles**: Manages team role assignments for applications - Control access and permissions
+- **bitrise_org_secret**: Manages workspace (organization) secrets shared by every app in the workspace
 
 ### Data Sources
 
