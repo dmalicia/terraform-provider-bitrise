@@ -1,5 +1,9 @@
 ## 2.3.0 (Unreleased)
 
+FEATURES:
+
+* `bitrise_app_ssh`: Add write-only `auth_ssh_private_key_wo` and `auth_ssh_private_key_wo_version` so the private key is never stored in state or plan. Requires Terraform 1.11 or later; `auth_ssh_private_key` keeps working on all supported versions and is now optional (exactly one of the two must be set) ([#17](https://github.com/dmalicia/terraform-provider-bitrise/issues/17))
+
 BUG FIXES:
 
 * `bitrise_app`, `bitrise_app_finish`, `bitrise_app_ssh`: Report API and network errors on create instead of failing with a generic "Missing Resource State After Create" error

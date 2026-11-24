@@ -4,17 +4,20 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	"terraform-provider-bitrise/internal/bitriseapi"
 )
 
 var (
-	_ resource.ResourceWithConfigure   = &AppSSHResource{}
-	_ resource.ResourceWithImportState = &AppSSHResource{}
+	_ resource.ResourceWithConfigure      = &AppSSHResource{}
+	_ resource.ResourceWithImportState    = &AppSSHResource{}
+	_ resource.ResourceWithValidateConfig = &AppSSHResource{}
 )
 
 // Payload is the request body of the SSH key registration endpoint.
@@ -38,6 +41,8 @@ func NewAppSSHResource() resource.Resource {
 type AppSSHResourceModel struct {
 	AppSlug                          types.String `tfsdk:"app_slug"`
 	AuthSSHPrivateKey                types.String `tfsdk:"auth_ssh_private_key"`
+	AuthSSHPrivateKeyWO              types.String `tfsdk:"auth_ssh_private_key_wo"`
+	AuthSSHPrivateKeyWOVersion       types.Int64  `tfsdk:"auth_ssh_private_key_wo_version"`
 	AuthSSHPublicKey                 types.String `tfsdk:"auth_ssh_public_key"`
 	IsRegisterKeyIntoProviderService types.Bool   `tfsdk:"is_register_key_into_provider_service"`
 }
@@ -57,9 +62,19 @@ func (r *AppSSHResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 				Required:            true,
 			},
 			"auth_ssh_private_key": schema.StringAttribute{
-				MarkdownDescription: "Private SSH key for authentication",
-				Required:            true,
+				MarkdownDescription: "Private SSH key for authentication. Stored in state. Exactly one of `auth_ssh_private_key` or `auth_ssh_private_key_wo` must be set.",
+				Optional:            true,
 				Sensitive:           true,
+			},
+			"auth_ssh_private_key_wo": schema.StringAttribute{
+				MarkdownDescription: "Write-only private SSH key for authentication. Never stored in state or plan. Requires Terraform 1.11 or later. Exactly one of `auth_ssh_private_key` or `auth_ssh_private_key_wo` must be set.",
+				Optional:            true,
+				Sensitive:           true,
+				WriteOnly:           true,
+			},
+			"auth_ssh_private_key_wo_version": schema.Int64Attribute{
+				MarkdownDescription: "Change this value to register a new `auth_ssh_private_key_wo`. Terraform cannot detect changes to write-only values. Only valid with `auth_ssh_private_key_wo`.",
+				Optional:            true,
 			},
 			"auth_ssh_public_key": schema.StringAttribute{
 				MarkdownDescription: "Public SSH key for authentication",
@@ -73,6 +88,35 @@ func (r *AppSSHResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 	}
 }
 
+// ValidateConfig requires exactly one private key attribute.
+func (r *AppSSHResource) ValidateConfig(ctx context.Context, req resource.ValidateConfigRequest, resp *resource.ValidateConfigResponse) {
+	var data AppSSHResourceModel
+	resp.Diagnostics.Append(req.Config.Get(ctx, &data)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if data.AuthSSHPrivateKey.IsUnknown() || data.AuthSSHPrivateKeyWO.IsUnknown() {
+		return
+	}
+
+	hasKey := !data.AuthSSHPrivateKey.IsNull()
+	hasWO := !data.AuthSSHPrivateKeyWO.IsNull()
+	switch {
+	case hasKey && hasWO:
+		resp.Diagnostics.AddAttributeError(path.Root("auth_ssh_private_key_wo"), "Conflicting private key attributes",
+			"Set only one of auth_ssh_private_key or auth_ssh_private_key_wo.")
+	case !hasKey && !hasWO:
+		resp.Diagnostics.AddAttributeError(path.Root("auth_ssh_private_key"), "Missing private key",
+			"Set one of auth_ssh_private_key or auth_ssh_private_key_wo.")
+	}
+
+	if !data.AuthSSHPrivateKeyWOVersion.IsNull() && !data.AuthSSHPrivateKeyWOVersion.IsUnknown() && !hasWO {
+		resp.Diagnostics.AddAttributeError(path.Root("auth_ssh_private_key_wo_version"), "Invalid attribute combination",
+			"auth_ssh_private_key_wo_version can only be set together with auth_ssh_private_key_wo.")
+	}
+}
+
 // Create registers the SSH key.
 func (r *AppSSHResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var data AppSSHResourceModel
@@ -81,7 +125,13 @@ func (r *AppSSHResource) Create(ctx context.Context, req resource.CreateRequest,
 		return
 	}
 
-	if err := r.register(ctx, data); err != nil {
+	privateKey, diags := privateKeyFromConfig(ctx, req.Config, data)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if err := r.register(ctx, data, privateKey); err != nil {
 		appCallDiags("Unable to create request: %s", "Unable to register SSH key: %s").add(&resp.Diagnostics, err)
 		return
 	}
@@ -123,7 +173,13 @@ func (r *AppSSHResource) Update(ctx context.Context, req resource.UpdateRequest,
 		return
 	}
 
-	if err := r.register(ctx, data); err != nil {
+	privateKey, diags := privateKeyFromConfig(ctx, req.Config, data)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if err := r.register(ctx, data, privateKey); err != nil {
 		appCallDiags("Unable to create request: %s", "Unable to update SSH key: %s").add(&resp.Diagnostics, err)
 		return
 	}
@@ -136,14 +192,25 @@ func (r *AppSSHResource) ImportState(ctx context.Context, req resource.ImportSta
 	resource.ImportStatePassthroughID(ctx, path.Root("app_slug"), req, resp)
 }
 
-func (r *AppSSHResource) register(ctx context.Context, data AppSSHResourceModel) error {
+// privateKeyFromConfig returns the key to register. Write-only values exist only in the config.
+func privateKeyFromConfig(ctx context.Context, config tfsdk.Config, data AppSSHResourceModel) (string, diag.Diagnostics) {
+	if !data.AuthSSHPrivateKey.IsNull() {
+		return data.AuthSSHPrivateKey.ValueString(), nil
+	}
+
+	var wo types.String
+	diags := config.GetAttribute(ctx, path.Root("auth_ssh_private_key_wo"), &wo)
+	return wo.ValueString(), diags
+}
+
+func (r *AppSSHResource) register(ctx context.Context, data AppSSHResourceModel, privateKey string) error {
 	appSlug := data.AppSlug.ValueString()
 	return r.client.Do(ctx, bitriseapi.Request{
 		Op:     "register SSH key of app " + appSlug,
 		Method: http.MethodPost,
 		Path:   bitriseapi.AppSSHKeyPath(appSlug),
 		Body: Payload{
-			AuthSSHPrivateKey:                data.AuthSSHPrivateKey.ValueString(),
+			AuthSSHPrivateKey:                privateKey,
 			AuthSSHPublicKey:                 data.AuthSSHPublicKey.ValueString(),
 			IsRegisterKeyIntoProviderService: data.IsRegisterKeyIntoProviderService.ValueBool(),
 		},
