@@ -1,10 +1,13 @@
 package provider
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"testing"
 
+	fwresource "github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -162,5 +165,47 @@ func TestAppFinishResource_ImportState_withAppSlug_importsResource(t *testing.T)
 				ImportStateVerifyIgnore: []string{"project_type", "stack_id", "config", "mode", "envs", "organization_slug"},
 			},
 		},
+	})
+}
+
+func TestAppFinishResource_Schema_envsIsSensitive(t *testing.T) {
+	var resp fwresource.SchemaResponse
+	NewAppFinishResource().Schema(context.Background(), fwresource.SchemaRequest{}, &resp)
+
+	attr, ok := resp.Schema.Attributes["envs"].(schema.MapAttribute)
+	require.True(t, ok, "envs must be a map attribute")
+	assert.True(t, attr.Sensitive, "env values must be redacted from plan and apply output")
+}
+
+func TestAppFinishResource_Output_withoutSensitiveFlag_isRejected(t *testing.T) {
+	api := newFakeAPI(t)
+	api.addApp("app-123")
+
+	runUnitTest(t, resource.TestCase{
+		Steps: []resource.TestStep{{
+			Config: appFinishConfig(api, "manual") + `
+output "envs" {
+  value = bitrise_app_finish.test.envs
+}
+`,
+			ExpectError: errorMatching("Output refers to sensitive values"),
+		}},
+	})
+}
+
+func TestAppFinishResource_Output_withSensitiveFlag_isAccepted(t *testing.T) {
+	api := newFakeAPI(t)
+	api.addApp("app-123")
+
+	runUnitTest(t, resource.TestCase{
+		Steps: []resource.TestStep{{
+			Config: appFinishConfig(api, "manual") + `
+output "envs" {
+  value     = bitrise_app_finish.test.envs
+  sensitive = true
+}
+`,
+			Check: resource.TestCheckResourceAttr("bitrise_app_finish.test", "envs.MY_ENV", "value"),
+		}},
 	})
 }

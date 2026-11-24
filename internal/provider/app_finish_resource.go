@@ -84,7 +84,8 @@ func (r *AppFinishResource) Schema(_ context.Context, _ resource.SchemaRequest, 
 			"envs": schema.MapAttribute{
 				ElementType: types.StringType,
 				Optional:    true,
-				Description: "Envs",
+				Sensitive:   true,
+				Description: "Environment variables to set on the app. Values can hold secrets, so they are redacted from plan and apply output.",
 			},
 			"organization_slug": schema.StringAttribute{
 				MarkdownDescription: "The slug of the organization that owns the app",

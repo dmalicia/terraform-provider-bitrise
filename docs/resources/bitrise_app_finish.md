@@ -69,7 +69,7 @@ The following arguments are supported:
 * `config` - (Required) The Bitrise build configuration (bitrise.yml content). This is typically loaded from a file using the `file()` function.
 * `mode` - (Required) The configuration mode. Typically set to `manual` for manual configuration management.
 * `organization_slug` - (Required) The slug of the organization that owns the app.
-* `envs` - (Optional) A map of environment variables to set for the app. These will be available during builds.
+* `envs` - (Optional, Sensitive) A map of environment variables to set for the app. These will be available during builds. Values are redacted from plan and apply output; an `output` that references `envs` must set `sensitive = true`.
 
 ## Attribute Reference
 

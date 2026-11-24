@@ -1,12 +1,15 @@
 package provider
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"regexp"
 	"strings"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-framework/provider"
+	providerschema "github.com/hashicorp/terraform-plugin-framework/provider/schema"
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
 	"github.com/hashicorp/terraform-plugin-go/tfprotov6"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
@@ -105,4 +108,13 @@ data "bitrise_available_stacks" "test" {}
 			ExpectError: errorMatching("Error creating HTTP request"),
 		}},
 	})
+}
+
+func TestBitriseProvider_Schema_tokenIsSensitive(t *testing.T) {
+	var resp provider.SchemaResponse
+	New("test")().Schema(context.Background(), provider.SchemaRequest{}, &resp)
+
+	attr, ok := resp.Schema.Attributes["token"].(providerschema.StringAttribute)
+	require.True(t, ok, "token must be a string attribute")
+	assert.True(t, attr.Sensitive, "the API token must be redacted from output")
 }
