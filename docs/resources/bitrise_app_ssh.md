@@ -54,7 +54,13 @@ This resource does not export any additional attributes beyond the arguments.
 
 ## Import
 
-SSH key configurations cannot be imported because the private key value cannot be retrieved from the Bitrise API for security reasons.
+SSH key configurations can be imported using the app slug:
+
+```shell
+terraform import bitrise_app_ssh.example your-app-slug
+```
+
+**Note:** Only `app_slug` is recovered on import; the Bitrise API never returns SSH keys. Both keys must be set in configuration, so the next `terraform apply` updates the resource in place and registers them again.
 
 ## API Documentation
 
@@ -66,7 +72,7 @@ For more information, see the [Bitrise API documentation](https://api-docs.bitri
 
 ## Notes
 
-* The private SSH key is temporarily written to a local file during resource creation for processing. This file is managed securely but be aware of this behavior.
+* The private SSH key is sent to the Bitrise API directly from memory; it is never written to disk.
 * You must have valid SSH key pairs. The public and private keys must match.
 * If `is_register_key_into_provider_service` is `true`, Bitrise must have access to your git provider to register the public key.
 * SSH keys are essential for private repositories and repositories that require authenticated access.
