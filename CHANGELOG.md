@@ -14,6 +14,10 @@ BUG FIXES:
 * Time out API requests after 60 seconds instead of waiting indefinitely for an unresponsive API
 * Reject API responses larger than 1 MiB and truncate error response bodies in diagnostics to 4 KiB instead of reading them without limit
 
+SECURITY NOTICE:
+
+* `bitrise_app_ssh`: versions before the SSH key fix wrote the private key to a `testtfkey` file (mode 0644) in the directory where `terraform apply` ran, and could expose the key in CI logs and `TF_LOG=DEBUG` logs. If you used an earlier version: delete any stray `testtfkey` files in the directories where you ran `terraform apply`, purge or restrict old CI logs, and rotate the SSH keys that were used with earlier versions. `testtfkey` is now listed in `.gitignore` so a leftover file is not committed by accident.
+
 NOTES:
 
 * Build with Go 1.26.11 (Go 1.24 is no longer supported) and update dependencies, including `golang.org/x/crypto`, `golang.org/x/net`, `golang.org/x/text`, `google.golang.org/grpc` and `github.com/cloudflare/circl`, to fix known vulnerabilities
