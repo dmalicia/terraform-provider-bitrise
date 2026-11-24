@@ -54,7 +54,7 @@ The following arguments are supported:
 * `app_slug` - (Required, ForceNew) The slug of the Bitrise app. Changing this forces a new resource to be created.
 * `auth_ssh_private_key` - (Optional, Sensitive) The private SSH key for authentication. This key will be used to access the repository during builds. Stored in state. Exactly one of `auth_ssh_private_key` or `auth_ssh_private_key_wo` must be set.
 * `auth_ssh_private_key_wo` - (Optional, Sensitive, Write-only) The private SSH key, never stored in state or plan. Requires Terraform 1.11 or later; older versions report an error if it is set. Exactly one of `auth_ssh_private_key` or `auth_ssh_private_key_wo` must be set.
-* `auth_ssh_private_key_wo_version` - (Optional) Change this value to register a new `auth_ssh_private_key_wo`. Terraform cannot detect changes to write-only values, so a changed key is only sent when this value changes. Only valid with `auth_ssh_private_key_wo`.
+* `auth_ssh_private_key_wo_version` - (Optional) Change this value to register a new `auth_ssh_private_key_wo`. Terraform cannot detect changes to write-only values, so changing only the key does not trigger an update. Any update of the resource (for example a change to `auth_ssh_public_key` or `is_register_key_into_provider_service`) also registers the key currently set in `auth_ssh_private_key_wo`. Only valid with `auth_ssh_private_key_wo`.
 * `auth_ssh_public_key` - (Required) The public SSH key for authentication. This corresponds to the private key and may be registered with the git provider.
 * `is_register_key_into_provider_service` - (Optional) If `true`, Bitrise will automatically register the public key with your git provider service. Default: `false`.
 
