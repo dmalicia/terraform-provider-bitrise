@@ -48,7 +48,7 @@ This resource does not export any additional attributes beyond the arguments.
 
 ## Security Considerations
 
-* **Private Key Storage**: The private SSH key is marked as sensitive and will not appear in Terraform logs or console output.
+* **Private Key Storage**: The private SSH key is marked as sensitive, so it is hidden from plan and console output, but it is still stored in plain text in the Terraform state. Use a remote backend with encryption at rest and restrict access to the state.
 * **Key Rotation**: To rotate SSH keys, you can update the `auth_ssh_private_key` and `auth_ssh_public_key` attributes. This will trigger an update of the SSH configuration.
 * **Provider Registration**: When `is_register_key_into_provider_service` is enabled, ensure your Bitrise account has the necessary permissions to register keys with your git provider.
 
@@ -72,7 +72,7 @@ For more information, see the [Bitrise API documentation](https://api-docs.bitri
 
 ## Notes
 
-* The private SSH key is sent to the Bitrise API directly from memory; it is never written to disk.
+* The provider sends the private SSH key to the Bitrise API from memory and creates no temporary key file. The key is still persisted in Terraform state (see Security Considerations).
 * You must have valid SSH key pairs. The public and private keys must match.
 * If `is_register_key_into_provider_service` is `true`, Bitrise must have access to your git provider to register the public key.
 * SSH keys are essential for private repositories and repositories that require authenticated access.
