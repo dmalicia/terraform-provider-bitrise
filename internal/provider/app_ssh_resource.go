@@ -59,6 +59,7 @@ func (r *AppSSHResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 			"auth_ssh_private_key": schema.StringAttribute{
 				MarkdownDescription: "Private SSH key for authentication",
 				Required:            true,
+				Sensitive:           true,
 			},
 			"auth_ssh_public_key": schema.StringAttribute{
 				MarkdownDescription: "Public SSH key for authentication",
