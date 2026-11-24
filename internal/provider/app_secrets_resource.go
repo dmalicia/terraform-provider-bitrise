@@ -198,11 +198,10 @@ func (r *AppSecretsResource) Create(ctx context.Context, req resource.CreateRequ
 	if httpResp.StatusCode != http.StatusCreated {
 		tflog.Error(ctx, "Failed to create secret", map[string]interface{}{
 			"status": httpResp.Status,
-			"body":   string(responseBody),
 		})
 		resp.Diagnostics.AddError(
 			"API Error",
-			fmt.Sprintf("Failed to create secret: %s - %s", httpResp.Status, string(responseBody)),
+			fmt.Sprintf("Failed to create secret: %s - %s", httpResp.Status, truncateResponseBody(responseBody)),
 		)
 		return
 	}
@@ -269,11 +268,10 @@ func (r *AppSecretsResource) Read(ctx context.Context, req resource.ReadRequest,
 	if httpResp.StatusCode != http.StatusOK {
 		tflog.Error(ctx, "Failed to read secret", map[string]interface{}{
 			"status": httpResp.Status,
-			"body":   string(responseBody),
 		})
 		resp.Diagnostics.AddError(
 			"API Error",
-			fmt.Sprintf("Failed to read secret: %s - %s", httpResp.Status, string(responseBody)),
+			fmt.Sprintf("Failed to read secret: %s - %s", httpResp.Status, truncateResponseBody(responseBody)),
 		)
 		return
 	}
@@ -358,11 +356,10 @@ func (r *AppSecretsResource) Update(ctx context.Context, req resource.UpdateRequ
 	if httpResp.StatusCode != http.StatusOK {
 		tflog.Error(ctx, "Failed to update secret", map[string]interface{}{
 			"status": httpResp.Status,
-			"body":   string(responseBody),
 		})
 		resp.Diagnostics.AddError(
 			"API Error",
-			fmt.Sprintf("Failed to update secret: %s - %s", httpResp.Status, string(responseBody)),
+			fmt.Sprintf("Failed to update secret: %s - %s", httpResp.Status, truncateResponseBody(responseBody)),
 		)
 		return
 	}
@@ -409,11 +406,10 @@ func (r *AppSecretsResource) Delete(ctx context.Context, req resource.DeleteRequ
 		responseBody, _ := io.ReadAll(httpResp.Body)
 		tflog.Error(ctx, "Failed to delete secret", map[string]interface{}{
 			"status": httpResp.Status,
-			"body":   string(responseBody),
 		})
 		resp.Diagnostics.AddError(
 			"API Error",
-			fmt.Sprintf("Failed to delete secret: %s - %s", httpResp.Status, string(responseBody)),
+			fmt.Sprintf("Failed to delete secret: %s - %s", httpResp.Status, truncateResponseBody(responseBody)),
 		)
 		return
 	}

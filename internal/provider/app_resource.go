@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/http/httputil"
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -176,8 +175,6 @@ func (r *AppResource) Create(ctx context.Context, req resource.CreateRequest, re
 	}
 	payload := string(payloadBytes)
 
-	tflog.Debug(ctx, "MODULEDEBUG: Request payload", map[string]interface{}{"payload": payload})
-
 	// Create an HTTP request
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", completeURL, strings.NewReader(payload))
 	if err != nil {
@@ -185,10 +182,6 @@ func (r *AppResource) Create(ctx context.Context, req resource.CreateRequest, re
 		handleRequestError(err, resp)
 		return
 	}
-	// Dump the HTTP request details
-	dump, _ := httputil.DumpRequest(httpReq, true)
-	tflog.Debug(ctx, "MODULEDEBUG: HTTP Request", map[string]interface{}{"request": string(dump)})
-
 	// Send the HTTP request
 	httpResp, err := client.Do(httpReq)
 	if err != nil {
@@ -205,8 +198,6 @@ func (r *AppResource) Create(ctx context.Context, req resource.CreateRequest, re
 		handleRequestError(err, resp)
 		return
 	}
-	tflog.Debug(ctx, "MODULEDEBUG: Response body", map[string]interface{}{"body": string(responseBody)})
-
 	// Parse the response JSON
 	// Unmarshal the JSON response into the CreateResponse struct
 	var jsonResponse CreateResponse
@@ -288,9 +279,8 @@ func (r *AppResource) Delete(ctx context.Context, req resource.DeleteRequest, re
 		responseBody, _ := io.ReadAll(httpResp.Body)
 		tflog.Error(ctx, "Delete request did not succeed", map[string]interface{}{
 			"status": httpResp.Status,
-			"body":   string(responseBody),
 		})
-		resp.Diagnostics.AddError("API Error", fmt.Sprintf("Unable to delete app: %s - %s", httpResp.Status, string(responseBody)))
+		resp.Diagnostics.AddError("API Error", fmt.Sprintf("Unable to delete app: %s - %s", httpResp.Status, truncateResponseBody(responseBody)))
 		return
 	}
 
@@ -353,10 +343,8 @@ func (r *AppResource) Read(ctx context.Context, req resource.ReadRequest, resp *
 	}
 
 	if httpResp.StatusCode != http.StatusOK {
-		responseBody, _ := io.ReadAll(httpResp.Body)
 		tflog.Error(ctx, "Request did not succeed", map[string]interface{}{
 			"status": httpResp.Status,
-			"body":   string(responseBody),
 		})
 		resp.Diagnostics.AddError("API Error", fmt.Sprintf("Unable to read app, got status: %s", httpResp.Status))
 		return
@@ -369,8 +357,6 @@ func (r *AppResource) Read(ctx context.Context, req resource.ReadRequest, resp *
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read response: %s", err))
 		return
 	}
-
-	tflog.Debug(ctx, "MODULEDEBUG: Response body", map[string]interface{}{"body": string(responseBody)})
 
 	// Parse the response JSON to update state with actual values from API
 	type AppDetailsResponse struct {
@@ -461,8 +447,6 @@ func (r *AppResource) Update(ctx context.Context, req resource.UpdateRequest, re
 	}
 	payload := string(payloadBytes)
 
-	tflog.Debug(ctx, "MODULEDEBUG: Update request payload", map[string]interface{}{"payload": payload})
-
 	// Create an HTTP request with PATCH method
 	httpReq, err := http.NewRequestWithContext(ctx, "PATCH", completeURL, strings.NewReader(payload))
 	if err != nil {
@@ -470,10 +454,6 @@ func (r *AppResource) Update(ctx context.Context, req resource.UpdateRequest, re
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to create request: %s", err))
 		return
 	}
-
-	// Dump the HTTP request details
-	dump, _ := httputil.DumpRequest(httpReq, true)
-	tflog.Debug(ctx, "MODULEDEBUG: HTTP Request", map[string]interface{}{"request": string(dump)})
 
 	// Send the HTTP request
 	httpResp, err := client.Do(httpReq)
@@ -492,15 +472,12 @@ func (r *AppResource) Update(ctx context.Context, req resource.UpdateRequest, re
 		return
 	}
 
-	tflog.Debug(ctx, "MODULEDEBUG: Response body", map[string]interface{}{"body": string(responseBody)})
-
 	// Check response status
 	if httpResp.StatusCode != http.StatusOK {
 		tflog.Error(ctx, "Update request did not succeed", map[string]interface{}{
 			"status": httpResp.Status,
-			"body":   string(responseBody),
 		})
-		resp.Diagnostics.AddError("API Request Error", fmt.Sprintf("Request did not succeed: %s - %s", httpResp.Status, string(responseBody)))
+		resp.Diagnostics.AddError("API Request Error", fmt.Sprintf("Request did not succeed: %s - %s", httpResp.Status, truncateResponseBody(responseBody)))
 		return
 	}
 
@@ -515,7 +492,16 @@ func (r *AppResource) ImportState(ctx context.Context, req resource.ImportStateR
 }
 
 func handleRequestError(err error, resp *resource.CreateResponse) {
-	// Implementation for handling request error
+	resp.Diagnostics.AddError("Request Error", err.Error())
+}
+
+// truncateResponseBody limits a response body included in a diagnostic message.
+func truncateResponseBody(body []byte) string {
+	const maxLen = 512
+	if len(body) > maxLen {
+		return string(body[:maxLen]) + "...(truncated)"
+	}
+	return string(body)
 }
 
 func printResponseInfo(httpResp *http.Response) {

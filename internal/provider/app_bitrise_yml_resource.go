@@ -203,13 +203,12 @@ func (r *AppBitriseYmlResource) Create(ctx context.Context, req resource.CreateR
 
 	tflog.Debug(ctx, "Received HTTP response", map[string]interface{}{
 		"status": httpResp.StatusCode,
-		"body":   string(responseBody),
 	})
 
 	if httpResp.StatusCode != http.StatusOK && httpResp.StatusCode != http.StatusCreated {
 		resp.Diagnostics.AddError(
 			"API Request Error",
-			fmt.Sprintf("Request failed with status %d: %s", httpResp.StatusCode, string(responseBody)),
+			fmt.Sprintf("Request failed with status %d: %s", httpResp.StatusCode, truncateResponseBody(responseBody)),
 		)
 		return
 	}
@@ -275,7 +274,6 @@ func (r *AppBitriseYmlResource) Read(ctx context.Context, req resource.ReadReque
 	tflog.Debug(ctx, "Received HTTP response", map[string]interface{}{
 		"status":       httpResp.StatusCode,
 		"content-type": httpResp.Header.Get("Content-Type"),
-		"body":         string(responseBody),
 	})
 
 	if httpResp.StatusCode == http.StatusNotFound {
@@ -287,7 +285,7 @@ func (r *AppBitriseYmlResource) Read(ctx context.Context, req resource.ReadReque
 	if httpResp.StatusCode != http.StatusOK {
 		resp.Diagnostics.AddError(
 			"API Request Error",
-			fmt.Sprintf("Request failed with status %d: %s", httpResp.StatusCode, string(responseBody)),
+			fmt.Sprintf("Request failed with status %d: %s", httpResp.StatusCode, truncateResponseBody(responseBody)),
 		)
 		return
 	}
@@ -403,13 +401,12 @@ func (r *AppBitriseYmlResource) Update(ctx context.Context, req resource.UpdateR
 
 	tflog.Debug(ctx, "Received HTTP response", map[string]interface{}{
 		"status": httpResp.StatusCode,
-		"body":   string(responseBody),
 	})
 
 	if httpResp.StatusCode != http.StatusOK && httpResp.StatusCode != http.StatusCreated {
 		resp.Diagnostics.AddError(
 			"API Request Error",
-			fmt.Sprintf("Request failed with status %d: %s", httpResp.StatusCode, string(responseBody)),
+			fmt.Sprintf("Request failed with status %d: %s", httpResp.StatusCode, truncateResponseBody(responseBody)),
 		)
 		return
 	}

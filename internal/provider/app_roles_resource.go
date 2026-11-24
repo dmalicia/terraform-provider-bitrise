@@ -194,11 +194,10 @@ func (r *AppRolesResource) Read(ctx context.Context, req resource.ReadRequest, r
 	if httpResp.StatusCode != http.StatusOK {
 		tflog.Error(ctx, "Failed to read role groups", map[string]interface{}{
 			"status": httpResp.Status,
-			"body":   string(responseBody),
 		})
 		resp.Diagnostics.AddError(
 			"API Error",
-			fmt.Sprintf("Failed to read role groups: %s - %s", httpResp.Status, string(responseBody)),
+			fmt.Sprintf("Failed to read role groups: %s - %s", httpResp.Status, truncateResponseBody(responseBody)),
 		)
 		return
 	}
@@ -343,11 +342,10 @@ func (r *AppRolesResource) updateRoleGroups(ctx context.Context, appSlug, roleNa
 	if httpResp.StatusCode != http.StatusOK {
 		tflog.Error(ctx, "Failed to update role groups", map[string]interface{}{
 			"status": httpResp.Status,
-			"body":   string(responseBody),
 		})
 		diags.AddError(
 			"API Error",
-			fmt.Sprintf("Failed to update role groups: %s - %s", httpResp.Status, string(responseBody)),
+			fmt.Sprintf("Failed to update role groups: %s - %s", httpResp.Status, truncateResponseBody(responseBody)),
 		)
 		return fmt.Errorf("API error: %s", httpResp.Status)
 	}

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/http/httputil"
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -80,6 +79,7 @@ func (r *AppFinishResource) Schema(ctx context.Context, req resource.SchemaReque
 			"envs": schema.MapAttribute{
 				ElementType: types.StringType,
 				Optional:    true,
+				Sensitive:   true,
 				Description: "Envs",
 			},
 			"organization_slug": schema.StringAttribute{
@@ -148,8 +148,6 @@ func (r *AppFinishResource) Create(ctx context.Context, req resource.CreateReque
 		return
 	}
 
-	tflog.Debug(ctx, "MODULEDEBUG: Request payload", map[string]interface{}{"payload_json": string(payloadJSON)})
-
 	// Create an HTTP request
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", completeURL, strings.NewReader(string(payloadJSON)))
 	if err != nil {
@@ -159,10 +157,6 @@ func (r *AppFinishResource) Create(ctx context.Context, req resource.CreateReque
 	}
 	// Set headers
 	httpReq.Header.Set("Content-Type", "application/json")
-
-	// Dump the HTTP request details
-	dump, _ := httputil.DumpRequest(httpReq, true)
-	tflog.Debug(ctx, "MODULEDEBUG: HTTP Request", map[string]interface{}{"request": string(dump)})
 
 	// Send the HTTP request
 	httpResp, err := client.Do(httpReq)
@@ -174,14 +168,12 @@ func (r *AppFinishResource) Create(ctx context.Context, req resource.CreateReque
 	defer httpResp.Body.Close()
 
 	// Read the response body
-	responseBody, err := io.ReadAll(httpResp.Body)
+	_, err = io.ReadAll(httpResp.Body)
 	if err != nil {
 		tflog.Error(ctx, "Error reading response body", map[string]interface{}{"error": err.Error()})
 		handleRequestError(err, resp)
 		return
 	}
-	tflog.Debug(ctx, "MODULEDEBUG: Response body", map[string]interface{}{"body": string(responseBody)})
-
 	// Debugging: Print response status and headers
 	printResponseInfo(httpResp)
 
@@ -253,10 +245,8 @@ func (r *AppFinishResource) Read(ctx context.Context, req resource.ReadRequest, 
 	}
 
 	if httpResp.StatusCode != http.StatusOK {
-		responseBody, _ := io.ReadAll(httpResp.Body)
 		tflog.Error(ctx, "Request did not succeed", map[string]interface{}{
 			"status": httpResp.Status,
-			"body":   string(responseBody),
 		})
 		resp.Diagnostics.AddError("API Error", fmt.Sprintf("Unable to read app, got status: %s", httpResp.Status))
 		return
@@ -305,8 +295,6 @@ func (r *AppFinishResource) Update(ctx context.Context, req resource.UpdateReque
 		return
 	}
 
-	tflog.Debug(ctx, "MODULEDEBUG: Update request payload", map[string]interface{}{"payload_json": string(payloadJSON)})
-
 	// Create an HTTP request
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", completeURL, strings.NewReader(string(payloadJSON)))
 	if err != nil {
@@ -314,10 +302,6 @@ func (r *AppFinishResource) Update(ctx context.Context, req resource.UpdateReque
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to create request: %s", err))
 		return
 	}
-
-	// Dump the HTTP request details
-	dump, _ := httputil.DumpRequest(httpReq, true)
-	tflog.Debug(ctx, "MODULEDEBUG: HTTP Request", map[string]interface{}{"request": string(dump)})
 
 	// Send the HTTP request
 	httpResp, err := client.Do(httpReq)
@@ -336,15 +320,12 @@ func (r *AppFinishResource) Update(ctx context.Context, req resource.UpdateReque
 		return
 	}
 
-	tflog.Debug(ctx, "MODULEDEBUG: Response Body", map[string]interface{}{"body": string(responseBody)})
-
 	// Check response status
 	if httpResp.StatusCode != http.StatusOK {
 		tflog.Error(ctx, "Request did not succeed", map[string]interface{}{
 			"status": httpResp.Status,
-			"body":   string(responseBody),
 		})
-		resp.Diagnostics.AddError("API Request Error", fmt.Sprintf("Request did not succeed: %s - %s", httpResp.Status, string(responseBody)))
+		resp.Diagnostics.AddError("API Request Error", fmt.Sprintf("Request did not succeed: %s - %s", httpResp.Status, truncateResponseBody(responseBody)))
 		return
 	}
 

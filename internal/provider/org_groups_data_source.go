@@ -127,11 +127,10 @@ func (d *OrgGroupsDataSource) Read(ctx context.Context, req datasource.ReadReque
 	if httpResp.StatusCode != http.StatusOK {
 		tflog.Error(ctx, "Failed to read organization groups", map[string]interface{}{
 			"status": httpResp.Status,
-			"body":   string(responseBody),
 		})
 		resp.Diagnostics.AddError(
 			"API Error",
-			fmt.Sprintf("Failed to read organization groups: %s - %s", httpResp.Status, string(responseBody)),
+			fmt.Sprintf("Failed to read organization groups: %s - %s", httpResp.Status, truncateResponseBody(responseBody)),
 		)
 		return
 	}
