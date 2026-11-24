@@ -111,7 +111,7 @@ func (r *AppSSHResource) ValidateConfig(ctx context.Context, req resource.Valida
 			"Set one of auth_ssh_private_key or auth_ssh_private_key_wo.")
 	}
 
-	if !data.AuthSSHPrivateKeyWOVersion.IsNull() && !hasWO {
+	if !data.AuthSSHPrivateKeyWOVersion.IsNull() && !data.AuthSSHPrivateKeyWOVersion.IsUnknown() && !hasWO {
 		resp.Diagnostics.AddAttributeError(path.Root("auth_ssh_private_key_wo_version"), "Invalid attribute combination",
 			"auth_ssh_private_key_wo_version can only be set together with auth_ssh_private_key_wo.")
 	}

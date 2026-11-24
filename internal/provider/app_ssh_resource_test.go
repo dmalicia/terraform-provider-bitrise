@@ -342,6 +342,48 @@ resource "bitrise_app_ssh" "test" {
 	assert.Empty(t, api.received(http.MethodPost, "/v0.1/apps/app-123/register-ssh-key"))
 }
 
+func TestAppSSHResource_Create_whenVersionResolvesToNull_registersStoredKey(t *testing.T) {
+	api := newFakeAPI(t)
+	api.addApp("app-123")
+
+	runUnitTest(t, resource.TestCase{
+		Steps: []resource.TestStep{{
+			Config: api.providerConfig() + `
+resource "bitrise_app_ssh" "test" {
+  app_slug                        = "app-123"
+  auth_ssh_private_key            = "PRIVATE-KEY"
+  auth_ssh_private_key_wo_version = timestamp() == "" ? 1 : null
+  auth_ssh_public_key             = "ssh-ed25519 AAAA"
+}
+`,
+			ExpectNonEmptyPlan: true, // timestamp() stays unknown on every plan
+		}},
+	})
+
+	require.Len(t, api.received(http.MethodPost, "/v0.1/apps/app-123/register-ssh-key"), 1)
+}
+
+func TestAppSSHResource_Create_whenVersionResolvesWithStoredKey_reportsError(t *testing.T) {
+	api := newFakeAPI(t)
+	api.addApp("app-123")
+
+	runUnitTest(t, resource.TestCase{
+		Steps: []resource.TestStep{{
+			Config: api.providerConfig() + `
+resource "bitrise_app_ssh" "test" {
+  app_slug                        = "app-123"
+  auth_ssh_private_key            = "PRIVATE-KEY"
+  auth_ssh_private_key_wo_version = timestamp() == "" ? null : 1
+  auth_ssh_public_key             = "ssh-ed25519 AAAA"
+}
+`,
+			ExpectError: errorMatching("auth_ssh_private_key_wo_version can only be set together with auth_ssh_private_key_wo."),
+		}},
+	})
+
+	assert.Empty(t, api.received(http.MethodPost, "/v0.1/apps/app-123/register-ssh-key"))
+}
+
 func TestAppSSHResource_Schema_writeOnlyKeyIsSensitiveAndWriteOnly(t *testing.T) {
 	var resp fwresource.SchemaResponse
 	NewAppSSHResource().Schema(context.Background(), fwresource.SchemaRequest{}, &resp)
