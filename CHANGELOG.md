@@ -1,8 +1,4 @@
-## 2.2.0 (Unreleased)
-
-FEATURES:
-
-* **New Resource:** `bitrise_org_secret` - Manage workspace (organization) secrets shared by all apps in a Bitrise workspace
+## 2.3.0 (Unreleased)
 
 BUG FIXES:
 
@@ -21,6 +17,12 @@ BUG FIXES:
 NOTES:
 
 * Build with Go 1.26.11 (Go 1.24 is no longer supported) and update dependencies, including `golang.org/x/crypto`, `golang.org/x/net`, `golang.org/x/text`, `google.golang.org/grpc` and `github.com/cloudflare/circl`, to fix known vulnerabilities
+
+## 2.2.0 (November 24, 2026)
+
+FEATURES:
+
+* **New Resource:** `bitrise_org_secret` - Manage workspace (organization) secrets shared by all apps in a Bitrise workspace
 
 ## 2.1.0 (February 13, 2026)
 
