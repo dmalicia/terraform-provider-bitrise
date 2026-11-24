@@ -298,6 +298,50 @@ resource "bitrise_app_ssh" "test" {
 	})
 }
 
+// timestamp() is unknown at plan time, so these keys only resolve during apply.
+func TestAppSSHResource_Create_whenWriteOnlyKeyResolvesToNull_reportsError(t *testing.T) {
+	api := newFakeAPI(t)
+	api.addApp("app-123")
+
+	runUnitTest(t, resource.TestCase{
+		TerraformVersionChecks: []tfversion.TerraformVersionCheck{tfversion.SkipBelow(tfversion.Version1_11_0)},
+		Steps: []resource.TestStep{{
+			Config: api.providerConfig() + `
+resource "bitrise_app_ssh" "test" {
+  app_slug                = "app-123"
+  auth_ssh_private_key_wo = timestamp() == "" ? "WO-KEY" : null
+  auth_ssh_public_key     = "ssh-ed25519 AAAA"
+}
+`,
+			ExpectError: errorMatching("Set one of auth_ssh_private_key or auth_ssh_private_key_wo."),
+		}},
+	})
+
+	assert.Empty(t, api.received(http.MethodPost, "/v0.1/apps/app-123/register-ssh-key"))
+}
+
+func TestAppSSHResource_Create_whenKeysConflictAfterResolving_reportsError(t *testing.T) {
+	api := newFakeAPI(t)
+	api.addApp("app-123")
+
+	runUnitTest(t, resource.TestCase{
+		TerraformVersionChecks: []tfversion.TerraformVersionCheck{tfversion.SkipBelow(tfversion.Version1_11_0)},
+		Steps: []resource.TestStep{{
+			Config: api.providerConfig() + `
+resource "bitrise_app_ssh" "test" {
+  app_slug                = "app-123"
+  auth_ssh_private_key    = timestamp() == "" ? null : "PRIVATE-KEY"
+  auth_ssh_private_key_wo = "WO-KEY"
+  auth_ssh_public_key     = "ssh-ed25519 AAAA"
+}
+`,
+			ExpectError: errorMatching("Set only one of auth_ssh_private_key or auth_ssh_private_key_wo."),
+		}},
+	})
+
+	assert.Empty(t, api.received(http.MethodPost, "/v0.1/apps/app-123/register-ssh-key"))
+}
+
 func TestAppSSHResource_Schema_writeOnlyKeyIsSensitiveAndWriteOnly(t *testing.T) {
 	var resp fwresource.SchemaResponse
 	NewAppSSHResource().Schema(context.Background(), fwresource.SchemaRequest{}, &resp)

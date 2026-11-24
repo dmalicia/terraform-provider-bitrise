@@ -33,9 +33,15 @@ resource "bitrise_app_ssh" "generated" {
 }
 
 # Write-only private key (Terraform 1.11+): the key is never stored in state or plan
+variable "ssh_private_key_wo" {
+  type      = string
+  sensitive = true
+  ephemeral = true
+}
+
 resource "bitrise_app_ssh" "write_only" {
   app_slug                        = bitrise_app.my_app.app_slug
-  auth_ssh_private_key_wo         = var.ssh_private_key
+  auth_ssh_private_key_wo         = var.ssh_private_key_wo
   auth_ssh_private_key_wo_version = 1
   auth_ssh_public_key             = var.ssh_public_key
 }
