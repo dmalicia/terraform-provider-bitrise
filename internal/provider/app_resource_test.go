@@ -335,6 +335,53 @@ func TestAppResource_Update_whenTitleSetOnExistingApp_patchesTitle(t *testing.T)
 	assert.JSONEq(t, `{"is_public": true, "repository_url": "https://github.com/example/repo.git", "title": "team-repo"}`, requests[0].Body)
 }
 
+func checkRemoteTitle(api *fakeAPI, want string) resource.TestCheckFunc {
+	return func(*terraform.State) error {
+		var got string
+		api.update(func(a *fakeAPI) { got = a.apps["app-123"].Title })
+		if got != want {
+			return fmt.Errorf("remote title = %q, want %q", got, want)
+		}
+		return nil
+	}
+}
+
+func TestAppResource_Update_whenOnlyTitleRemoved_skipsPatchAndKeepsName(t *testing.T) {
+	api := newFakeAPI(t)
+
+	runUnitTest(t, resource.TestCase{
+		Steps: []resource.TestStep{
+			{Config: appConfigWithTitle(api, "team-repo")},
+			{
+				PreConfig: func() { api.fail(http.MethodPatch, "/v0.1/apps/app-123", http.StatusForbidden) },
+				Config:    appConfig(api, testRepoURL),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckNoResourceAttr("bitrise_app.test", "title"),
+					checkRemoteTitle(api, "team-repo"),
+				),
+			},
+		},
+	})
+
+	assert.Empty(t, api.received(http.MethodPatch, "/v0.1/apps/app-123"))
+}
+
+func TestAppResource_Update_whenTitleRemovedWithOtherChange_patchesWithoutTitle(t *testing.T) {
+	api := newFakeAPI(t)
+	const newURL = "https://github.com/example/other.git"
+
+	runUnitTest(t, resource.TestCase{
+		Steps: []resource.TestStep{
+			{Config: appConfigWithTitle(api, "team-repo")},
+			{Config: appConfig(api, newURL), Check: checkRemoteTitle(api, "team-repo")},
+		},
+	})
+
+	requests := api.received(http.MethodPatch, "/v0.1/apps/app-123")
+	require.Len(t, requests, 1)
+	assert.JSONEq(t, `{"is_public": true, "repository_url": "`+newURL+`"}`, requests[0].Body)
+}
+
 func TestAppResource_Read_whenTitleChangedRemotely_restoresTitle(t *testing.T) {
 	api := newFakeAPI(t)
 

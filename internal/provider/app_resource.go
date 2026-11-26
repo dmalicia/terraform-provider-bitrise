@@ -298,6 +298,19 @@ func (r *AppResource) Update(ctx context.Context, req resource.UpdateRequest, re
 		return
 	}
 
+	var state AppResourceModel
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	// A null title is omitted from the PATCH, so removing it alone changes nothing remotely.
+	titleChanged := !data.Title.IsNull() && !data.Title.Equal(state.Title)
+	if !titleChanged && data.IsPublic.Equal(state.IsPublic) && data.RepoURL.Equal(state.RepoURL) {
+		resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+		return
+	}
+
 	appSlug := data.AppSlug.ValueString()
 	err := r.client.Do(ctx, bitriseapi.Request{
 		Op:     "update app " + appSlug,
