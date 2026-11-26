@@ -11,6 +11,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 
@@ -56,6 +57,7 @@ type AppDetailsResponse struct {
 		RepoSlug  string `json:"repo_slug"`
 		Provider  string `json:"provider"`
 		RepoOwner string `json:"repo_owner"`
+		Title     string `json:"title"`
 	} `json:"data"`
 }
 
@@ -67,12 +69,14 @@ type appRegisterRequest struct {
 	OrganizationSlug string `json:"organization_slug"`
 	Provider         string `json:"provider"`
 	RepoURL          string `json:"repo_url"`
+	Title            string `json:"title,omitempty"`
 	Type             string `json:"type"`
 }
 
 type appUpdateRequest struct {
 	IsPublic      bool   `json:"is_public"`
 	RepositoryURL string `json:"repository_url,omitempty"`
+	Title         string `json:"title,omitempty"`
 }
 
 // AppResourceModel describes the bitrise_app resource data model.
@@ -87,6 +91,7 @@ type AppResourceModel struct {
 	GitRepoSlug           types.String `tfsdk:"git_repo_slug"`
 	GitOwner              types.String `tfsdk:"git_owner"`
 	AppSlug               types.String `tfsdk:"app_slug"`
+	Title                 types.String `tfsdk:"title"`
 }
 
 // Metadata returns the resource type name.
@@ -138,6 +143,11 @@ func (r *AppResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *
 				MarkdownDescription: "Git Owner",
 				Optional:            true,
 			},
+			"title": schema.StringAttribute{
+				MarkdownDescription: "Display name of the app. When omitted, Bitrise names the app after the repository and Terraform does not manage the name.",
+				Optional:            true,
+				Validators:          []validator.String{nonEmptyString{}},
+			},
 			"app_slug": schema.StringAttribute{
 				MarkdownDescription: "App Slug",
 				Computed:            true,
@@ -171,6 +181,7 @@ func (r *AppResource) Create(ctx context.Context, req resource.CreateRequest, re
 			OrganizationSlug: data.OrganizationSlug.ValueString(),
 			Provider:         data.Repo.ValueString(),
 			RepoURL:          data.RepoURL.ValueString(),
+			Title:            data.Title.ValueString(),
 			Type:             data.Type.ValueString(),
 		},
 	}, &created)
@@ -258,6 +269,10 @@ func (r *AppResource) Read(ctx context.Context, req resource.ReadRequest, resp *
 	if imported != nil || !data.IsPublic.IsNull() || app.Data.IsPublic {
 		data.IsPublic = types.BoolValue(app.Data.IsPublic)
 	}
+	// title stays null (unmanaged) unless set or imported.
+	if (imported != nil || !data.Title.IsNull()) && app.Data.Title != "" {
+		data.Title = types.StringValue(app.Data.Title)
+	}
 	if imported != nil {
 		resp.Diagnostics.Append(resp.Private.SetKey(ctx, appImportedKey, nil)...)
 	}
@@ -275,7 +290,7 @@ func (r *AppResource) Read(ctx context.Context, req resource.ReadRequest, resp *
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
-// Update changes the visibility and repository URL of the app.
+// Update changes the visibility, repository URL and title of the app.
 func (r *AppResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
 	var data AppResourceModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
@@ -291,6 +306,7 @@ func (r *AppResource) Update(ctx context.Context, req resource.UpdateRequest, re
 		Body: appUpdateRequest{
 			IsPublic:      data.IsPublic.ValueBool(),
 			RepositoryURL: data.RepoURL.ValueString(),
+			Title:         data.Title.ValueString(),
 		},
 	}, &bitriseapi.RawResponse{})
 	if err != nil {
@@ -321,4 +337,18 @@ func appCallDiags(buildDetail, sendDetail string) callDiags {
 			return "API Request Error", fmt.Sprintf("Request did not succeed: %s - %s", e.Status(), e.Body)
 		},
 	}
+}
+
+// nonEmptyString rejects "", which the API would ignore, leaving a permanent diff.
+type nonEmptyString struct{}
+
+func (nonEmptyString) Description(context.Context) string { return "value must not be empty" }
+
+func (v nonEmptyString) MarkdownDescription(ctx context.Context) string { return v.Description(ctx) }
+
+func (nonEmptyString) ValidateString(_ context.Context, req validator.StringRequest, resp *validator.StringResponse) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() || req.ConfigValue.ValueString() != "" {
+		return
+	}
+	resp.Diagnostics.AddAttributeError(req.Path, "Invalid Attribute Value", "Must not be empty. Omit the attribute to leave the name unmanaged.")
 }

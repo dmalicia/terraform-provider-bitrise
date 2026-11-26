@@ -3,6 +3,7 @@ package provider
 import (
 	"fmt"
 	"net/http"
+	"regexp"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
@@ -234,7 +235,7 @@ func TestAppResource_ImportState_withAppSlug_importsRemoteApp(t *testing.T) {
 				ImportState:             true,
 				ImportStateId:           "app-123",
 				ImportStateVerify:       true,
-				ImportStateVerifyIgnore: []string{"organization_slug", "type"},
+				ImportStateVerifyIgnore: []string{"organization_slug", "type", "title"},
 			},
 		},
 	})
@@ -255,4 +256,131 @@ func TestAppResource_ImportState_whenAppMissing_reportsError(t *testing.T) {
 			},
 		},
 	})
+}
+
+func appConfigWithTitle(api *fakeAPI, title string) string {
+	return api.providerConfig() + fmt.Sprintf(`
+resource "bitrise_app" "test" {
+  repo              = "github"
+  repo_url          = %q
+  type              = "git"
+  git_repo_slug     = "repo"
+  git_owner         = "example"
+  organization_slug = "org-abc"
+  is_public         = true
+  title             = %q
+}
+`, testRepoURL, title)
+}
+
+func TestAppResource_Create_withTitle_registersAppWithTitle(t *testing.T) {
+	api := newFakeAPI(t)
+
+	runUnitTest(t, resource.TestCase{
+		Steps: []resource.TestStep{{
+			Config: appConfigWithTitle(api, "team-repo"),
+			Check:  resource.TestCheckResourceAttr("bitrise_app.test", "title", "team-repo"),
+		}},
+	})
+
+	requests := api.received(http.MethodPost, "/v0.1/apps/register")
+	require.Len(t, requests, 1)
+	assert.JSONEq(t, `{
+		"git_owner": "example",
+		"git_repo_slug": "repo",
+		"is_public": true,
+		"organization_slug": "org-abc",
+		"provider": "github",
+		"repo_url": "https://github.com/example/repo.git",
+		"title": "team-repo",
+		"type": "git"
+	}`, requests[0].Body)
+}
+
+func TestAppResource_Read_withoutTitle_leavesRemoteTitleUnmanaged(t *testing.T) {
+	api := newFakeAPI(t)
+
+	runUnitTest(t, resource.TestCase{
+		Steps: []resource.TestStep{
+			{
+				Config: appConfig(api, testRepoURL),
+				Check:  resource.TestCheckNoResourceAttr("bitrise_app.test", "title"),
+			},
+			{
+				PreConfig: func() { api.update(func(a *fakeAPI) { a.apps["app-123"].Title = "renamed-in-ui" }) },
+				Config:    appConfig(api, testRepoURL),
+				Check:     resource.TestCheckNoResourceAttr("bitrise_app.test", "title"),
+			},
+		},
+	})
+
+	assert.Empty(t, api.received(http.MethodPatch, "/v0.1/apps/app-123"))
+}
+
+func TestAppResource_Update_whenTitleSetOnExistingApp_patchesTitle(t *testing.T) {
+	api := newFakeAPI(t)
+
+	runUnitTest(t, resource.TestCase{
+		Steps: []resource.TestStep{
+			{Config: appConfig(api, testRepoURL)},
+			{
+				Config: appConfigWithTitle(api, "team-repo"),
+				Check:  resource.TestCheckResourceAttr("bitrise_app.test", "title", "team-repo"),
+			},
+		},
+	})
+
+	requests := api.received(http.MethodPatch, "/v0.1/apps/app-123")
+	require.Len(t, requests, 1)
+	assert.JSONEq(t, `{"is_public": true, "repository_url": "https://github.com/example/repo.git", "title": "team-repo"}`, requests[0].Body)
+}
+
+func TestAppResource_Read_whenTitleChangedRemotely_restoresTitle(t *testing.T) {
+	api := newFakeAPI(t)
+
+	runUnitTest(t, resource.TestCase{
+		Steps: []resource.TestStep{
+			{Config: appConfigWithTitle(api, "team-repo")},
+			{
+				PreConfig: func() { api.update(func(a *fakeAPI) { a.apps["app-123"].Title = "renamed-in-ui" }) },
+				Config:    appConfigWithTitle(api, "team-repo"),
+				Check:     resource.TestCheckResourceAttr("bitrise_app.test", "title", "team-repo"),
+			},
+		},
+	})
+
+	requests := api.received(http.MethodPatch, "/v0.1/apps/app-123")
+	require.Len(t, requests, 1)
+	assert.Contains(t, requests[0].Body, `"title":"team-repo"`)
+}
+
+func TestAppResource_ImportState_withTitle_importsRemoteTitle(t *testing.T) {
+	api := newFakeAPI(t)
+
+	runUnitTest(t, resource.TestCase{
+		Steps: []resource.TestStep{
+			{Config: appConfigWithTitle(api, "team-repo")},
+			{
+				Config:                  appConfigWithTitle(api, "team-repo"),
+				ResourceName:            "bitrise_app.test",
+				ImportState:             true,
+				ImportStateId:           "app-123",
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"organization_slug", "type"},
+			},
+		},
+	})
+}
+
+func TestAppResource_Validate_whenTitleEmpty_returnsError(t *testing.T) {
+	api := newFakeAPI(t)
+
+	runUnitTest(t, resource.TestCase{
+		Steps: []resource.TestStep{{
+			Config:      appConfigWithTitle(api, ""),
+			ExpectError: regexp.MustCompile(`Must not be empty`),
+		}},
+	})
+
+	assert.Empty(t, api.allRequests())
 }

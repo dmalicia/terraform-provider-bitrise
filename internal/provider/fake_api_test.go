@@ -22,6 +22,7 @@ type fakeApp struct {
 	RepoSlug  string `json:"repo_slug"`
 	Provider  string `json:"provider"`
 	RepoOwner string `json:"repo_owner"`
+	Title     string `json:"title"`
 }
 
 // fakeResponse is a canned reply that overrides an endpoint.
@@ -135,7 +136,7 @@ func (a *fakeAPI) clearOverrides() {
 // addApp registers an app directly, without going through the API.
 func (a *fakeAPI) addApp(slug string) {
 	a.update(func(a *fakeAPI) {
-		a.apps[slug] = &fakeApp{Slug: slug, RepoURL: "https://github.com/example/repo.git", Provider: "github", RepoOwner: "example", RepoSlug: "repo"}
+		a.apps[slug] = &fakeApp{Slug: slug, RepoURL: "https://github.com/example/repo.git", Provider: "github", RepoOwner: "example", RepoSlug: "repo", Title: "repo"}
 	})
 }
 
@@ -219,7 +220,12 @@ func (a *fakeAPI) registerApp(w http.ResponseWriter, r *http.Request) {
 	a.mu.Lock()
 	slug := fmt.Sprintf("app-%d", a.nextSlug)
 	a.nextSlug++
-	a.apps[slug] = &fakeApp{Slug: slug, RepoURL: req.RepoURL, IsPublic: req.IsPublic, RepoSlug: req.GitRepoSlug, Provider: req.Provider, RepoOwner: req.GitOwner}
+	// Like Bitrise, name the app after the repository when no title is sent.
+	title := req.Title
+	if title == "" {
+		title = req.GitRepoSlug
+	}
+	a.apps[slug] = &fakeApp{Slug: slug, RepoURL: req.RepoURL, IsPublic: req.IsPublic, RepoSlug: req.GitRepoSlug, Provider: req.Provider, RepoOwner: req.GitOwner, Title: title}
 	a.mu.Unlock()
 	writeJSON(w, http.StatusOK, CreateResponse{Status: "ok", Slug: slug})
 }
@@ -241,6 +247,9 @@ func (a *fakeAPI) updateApp(w http.ResponseWriter, r *http.Request) {
 	app.IsPublic = req.IsPublic
 	if req.RepositoryURL != "" {
 		app.RepoURL = req.RepositoryURL
+	}
+	if req.Title != "" {
+		app.Title = req.Title
 	}
 	a.mu.Unlock()
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
