@@ -16,6 +16,17 @@ resource "bitrise_app" "my_app" {
   is_public         = false
 }
 
+# Register an application with a custom display name
+resource "bitrise_app" "named_app" {
+  repo              = "github"
+  repo_url          = "https://github.com/myorg/myrepo"
+  type              = "git"
+  git_repo_slug     = "myrepo"
+  git_owner         = "myorg"
+  organization_slug = "my-bitrise-org"
+  title             = "team-myrepo"
+}
+
 # Register a public GitHub application
 resource "bitrise_app" "public_app" {
   repo              = "github"
@@ -50,6 +61,7 @@ The following arguments are supported:
 * `git_owner` - (Optional) The owner or organization name in the git provider.
 * `organization_slug` - (Optional) The slug of the Bitrise organization where the app will be created.
 * `is_public` - (Optional) Whether the app should be public or private. Default: `false`.
+* `title` - (Optional) Display name of the app. When omitted, Bitrise names the app after the repository and Terraform does not manage the name. Changing it renames the app in place; removing it from the configuration leaves the current name unchanged.
 * `configurable_attribute` - (Optional) Additional configurable attribute for the app.
 
 ## Attribute Reference
@@ -73,6 +85,7 @@ This resource uses the following Bitrise API endpoints:
 
 - POST `/v0.1/apps/register` - Register a new app
 - GET `/v0.1/apps/{app-slug}` - Read app details
+- PATCH `/v0.1/apps/{app-slug}` - Update an app
 - DELETE `/v0.1/apps/{app-slug}` - Delete an app
 
 For more information, see the [Bitrise API documentation](https://api-docs.bitrise.io/).

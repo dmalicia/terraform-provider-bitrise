@@ -1,3 +1,9 @@
+## 2.4.0 (Unreleased)
+
+FEATURES:
+
+* `bitrise_app`: Add optional `title` to set the app's display name on create and rename it in place. When omitted, Bitrise keeps naming the app after the repository and the name is not managed, so existing configurations see no diff
+
 ## 2.3.0 (November 24, 2026)
 
 FEATURES:

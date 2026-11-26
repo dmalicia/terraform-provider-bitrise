@@ -22,6 +22,17 @@ resource "bitrise_app" "my_app" {
   is_public         = false
 }
 
+# Register an application with a custom display name
+resource "bitrise_app" "named_app" {
+  repo              = "github"
+  repo_url          = "https://github.com/myorg/myrepo"
+  type              = "git"
+  git_repo_slug     = "myrepo"
+  git_owner         = "myorg"
+  organization_slug = "my-bitrise-org"
+  title             = "team-myrepo"
+}
+
 # Register a public open-source application
 resource "bitrise_app" "public_app" {
   repo              = "github"
